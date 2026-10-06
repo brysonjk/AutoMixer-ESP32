@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 720 400" role="img" aria-label="Valve driver using an optoisolated AOD4184 breakout board. Fused +12 volts goes to the board's plus terminal only. The valve's two leads, as a twisted pair, go to the plus and LOAD terminals, and a 1N5819 flyback diode sits at the board across plus and LOAD, band to plus. The minus terminal runs on its own wire to the star ground. On the isolated input side, the ESP32 GPIO goes to PWM, a 1k pull-down runs from PWM to the header GND, and the header GND goes to the ESP32 board's ground on P5." width="720" height="400">
+<style>svg{
+  --paper:#EEF1F0; --sheet:#FFFFFF; --ink:#1A2328; --muted:#5B6870; --rule:#CBD3D6; --box:#F3F6F6; --board:#E6EEEA;
+  --w10:#C62828; --w5:#C75F00; --w33:#8C6A00; --gnd:#3B4A52; --i2c:#1F63C6; --pwm:#13804A; --sig:#7A3DB8;
+  --warn-bg:#FFF4E5; --warn-ink:#7A3E00;
+}
+@media (prefers-color-scheme: dark){svg{
+  color-scheme:dark;
+  --paper:#0E1316; --sheet:#151C20; --ink:#DCE3E6; --muted:#93A1A8; --rule:#2C373D; --box:#1B2429; --board:#172620;
+  --w10:#FF6B6B; --w5:#FFA24D; --w33:#E3C04A; --gnd:#9AABB3; --i2c:#6AA5FF; --pwm:#4FCB86; --sig:#B98CF0;
+  --warn-bg:#2A1E10; --warn-ink:#FFC680;
+}}
+.bg{fill:var(--sheet)}
+/* diagram classes */
+.box{fill:var(--box);stroke:var(--ink);stroke-width:1.2}
+.board{fill:var(--board);stroke:var(--ink);stroke-width:1.6}
+.pin{fill:var(--ink)}
+.t{fill:var(--ink);font:13px "IBM Plex Sans",system-ui,sans-serif}
+.tb{fill:var(--ink);font:600 13px "IBM Plex Sans",system-ui,sans-serif}
+.th{fill:var(--ink);font:600 16px "IBM Plex Sans Condensed","IBM Plex Sans",sans-serif}
+.tm{fill:var(--ink);font:12px "IBM Plex Mono",monospace}
+.ts{fill:var(--muted);font:11.5px "IBM Plex Sans",system-ui,sans-serif}
+.tg{fill:var(--muted);font:600 11px "IBM Plex Mono",monospace;letter-spacing:.06em}
+.w{fill:none;stroke-width:2.2;stroke-linejoin:round}
+.w10{stroke:var(--w10)} .w5{stroke:var(--w5)} .w33{stroke:var(--w33)} .wg{stroke:var(--gnd)}
+.wi{stroke:var(--i2c)} .wp{stroke:var(--pwm)} .ws{stroke:var(--sig)} .wk{stroke:var(--ink)}
+.c10{fill:var(--w10)} .c5{fill:var(--w5)} .c33{fill:var(--w33)} .ci{fill:var(--i2c)} .cp{fill:var(--pwm)} .cs{fill:var(--sig)} .cg{fill:var(--gnd)} .ck{fill:var(--ink)}
+.gs{color:var(--gnd)}
+.thick{stroke-width:4}
+.dash{stroke-dasharray:6 5}
+</style>
+<rect class="bg" x="0" y="0" width="720" height="400"/>
+        <defs>
+          <g id="gnd3" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M0 0v8M-9 8h18M-5.5 12.5h11M-2 17h4"/></g>
+        </defs>
+        <!-- +12 V feeds the board's + terminal only; the valve's + lead and the
+             diode's band also land on +, the valve's − lead and the diode on LOAD -->
+        <text class="t" x="395" y="74" text-anchor="end" style="fill:var(--w10)">+12 V supply (fused)</text>
+        <path class="w w10" d="M400 70H520V145M520 163V180M480 130H650V135M650 175V180H480"/>
+        <circle class="c10" cx="520" cy="130" r="3.5"/>
+        <circle class="c10" cx="520" cy="180" r="3.5"/>
+        <polygon class="ck" points="510,163 530,163 520,145"/>
+        <path class="w wk" d="M509 145H531"/>
+        <text class="tb" x="534" y="92">flyback diode at the board</text>
+        <text class="ts" x="534" y="108">1N5819, band to +</text>
+        <rect class="box" x="635" y="135" width="30" height="40" rx="2"/>
+        <text class="ts" x="590" y="155" text-anchor="middle">twisted</text>
+        <text class="ts" x="590" y="170" text-anchor="middle">pair</text>
+        <text class="tb" x="650" y="204" text-anchor="middle">valve coil</text>
+        <text class="ts" x="650" y="220" text-anchor="middle">10 V, ~55 Ω</text>
+
+        <!-- - terminal to the star, carrying the valve current -->
+        <path class="w wg thick" d="M480 230H530V318"/>
+        <use xlink:href="#gnd3" class="gs" x="530" y="318"/>
+        <text class="ts" x="546" y="332">own wire to the star point</text>
+        <text class="ts" x="546" y="347">(carries the valve current)</text>
+
+        <!-- breakout board -->
+        <rect class="box" x="220" y="90" width="260" height="170" rx="4"/>
+        <text class="tg" x="350" y="110" text-anchor="middle">AOD4184 BREAKOUT</text>
+        <text class="tm" x="470" y="134" text-anchor="end">+</text>
+        <text class="tm" x="470" y="184" text-anchor="end">LOAD</text>
+        <text class="tm" x="470" y="234" text-anchor="end">−</text>
+        <text class="tm" x="230" y="154">PWM</text>
+        <text class="tm" x="230" y="214">GND</text>
+        <text class="ts" x="382" y="164" text-anchor="middle">optoisolated input,</text>
+        <text class="ts" x="382" y="180" text-anchor="middle">1k resistor built in</text>
+        <text class="ts" x="382" y="196" text-anchor="middle">LOAD = drain · − = source</text>
+        <path class="w wk dash" d="M285 122V250" style="stroke:var(--muted);stroke-width:1.2"/>
+        <circle class="ck" cx="480" cy="130" r="4"/>
+        <circle class="ck" cx="480" cy="180" r="4"/>
+        <circle class="ck" cx="480" cy="230" r="4"/>
+        <circle class="ck" cx="220" cy="150" r="4"/>
+        <circle class="ck" cx="220" cy="210" r="4"/>
+
+        <!-- isolated input side -->
+        <rect class="box" x="20" y="130" width="120" height="40" rx="3"/>
+        <text class="tb" x="80" y="147" text-anchor="middle">ESP32 GPIO</text>
+        <text class="ts" x="80" y="162" text-anchor="middle">17 = O2 · 11 = He</text>
+        <path class="w wp" d="M140 150H220M180 150V162M180 198V210"/>
+        <path class="w wg" d="M220 210H80V270"/>
+        <circle class="cp" cx="180" cy="150" r="3.5"/>
+        <circle class="cg" cx="180" cy="210" r="3.5"/>
+        <rect class="box" x="172" y="162" width="16" height="36" rx="2"/>
+        <text class="tm" x="166" y="185" text-anchor="end">1k pull-down</text>
+        <rect class="box" x="20" y="270" width="120" height="40" rx="3"/>
+        <text class="tb" x="80" y="287" text-anchor="middle">ESP32 GND</text>
+        <text class="ts" x="80" y="302" text-anchor="middle">P5 GND pin</text>
+
+        <rect x="20" y="330" width="440" height="56" rx="3" style="fill:var(--warn-bg)"/>
+        <text class="ts" x="32" y="350" style="fill:var(--warn-ink)">The header GND is the opto LED's return and must reach the board.</text>
+        <text class="ts" x="32" y="366" style="fill:var(--warn-ink)">It isn't connected to +, LOAD or −, so valve current can't get into</text>
+        <text class="ts" x="32" y="381" style="fill:var(--warn-ink)">the board's ground this way. No extra series resistor needed.</text>
+      </svg>

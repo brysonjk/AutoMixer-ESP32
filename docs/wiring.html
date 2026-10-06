@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Auto Mixer Wiring</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --paper:#EEF1F0; --sheet:#FFFFFF; --ink:#1A2328; --muted:#5B6870; --rule:#CBD3D6; --box:#F3F6F6; --board:#E6EEEA;
+  --w10:#C62828; --w5:#C75F00; --w33:#8C6A00; --gnd:#3B4A52; --i2c:#1F63C6; --pwm:#13804A; --sig:#7A3DB8;
+  --warn-bg:#FFF4E5; --warn-ink:#7A3E00;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --paper:#0E1316; --sheet:#151C20; --ink:#DCE3E6; --muted:#93A1A8; --rule:#2C373D; --box:#1B2429; --board:#172620;
+    --w10:#FF6B6B; --w5:#FFA24D; --w33:#E3C04A; --gnd:#9AABB3; --i2c:#6AA5FF; --pwm:#4FCB86; --sig:#B98CF0;
+    --warn-bg:#2A1E10; --warn-ink:#FFC680;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --paper:#0E1316; --sheet:#151C20; --ink:#DCE3E6; --muted:#93A1A8; --rule:#2C373D; --box:#1B2429; --board:#172620;
+  --w10:#FF6B6B; --w5:#FFA24D; --w33:#E3C04A; --gnd:#9AABB3; --i2c:#6AA5FF; --pwm:#4FCB86; --sig:#B98CF0;
+  --warn-bg:#2A1E10; --warn-ink:#FFC680;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font:15px/1.55 "IBM Plex Sans",system-ui,sans-serif;padding-inline:16px;padding-block:28px 56px}
+main{max-width:1180px;margin:0 auto;display:grid;gap:28px}
+h1,h2{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",system-ui,sans-serif;text-wrap:balance;margin:0}
+h1{font-size:34px;font-weight:600;letter-spacing:.01em}
+h2{font-size:21px;font-weight:600}
+p{margin:0;max-width:68ch}
+.mono,code{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.92em}
+.titleblock{display:grid;grid-template-columns:2fr repeat(4,1fr);border:1.5px solid var(--ink);background:var(--sheet)}
+.titleblock>div{padding:10px 14px;border-left:1px solid var(--rule)}
+.titleblock>div:first-child{border-left:0}
+.titleblock .k{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.titleblock .v{font-family:"IBM Plex Mono",monospace;font-size:14px}
+@media (max-width:760px){.titleblock{grid-template-columns:1fr 1fr}.titleblock>div{border-left:0;border-top:1px solid var(--rule)}.titleblock>div:first-child{grid-column:1/-1;border-top:0}}
+section{background:var(--sheet);border:1px solid var(--rule);padding:22px 22px 18px;display:grid;gap:14px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+.legend i{display:inline-block;width:26px;height:0;border-top:3px solid}
+figure{margin:0;display:grid;gap:10px}
+.scroll{overflow-x:auto}
+svg{display:block;max-width:100%;height:auto}
+.wide svg{min-width:880px}
+figcaption{font-size:14px;color:var(--muted);max-width:80ch}
+figcaption b{color:var(--ink);font-weight:600}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:28px}
+@media (max-width:900px){.grid2{grid-template-columns:1fr}}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500}
+td:nth-child(2),td:nth-child(3){font-family:"IBM Plex Mono",monospace;white-space:nowrap}
+.checks{margin:0;padding-left:22px;display:grid;gap:8px;max-width:84ch}
+.warn{background:var(--warn-bg);color:var(--warn-ink);padding:12px 14px;border-left:4px solid var(--w10);font-size:14px}
+
+/* diagram classes */
+.box{fill:var(--box);stroke:var(--ink);stroke-width:1.2}
+.board{fill:var(--board);stroke:var(--ink);stroke-width:1.6}
+.pin{fill:var(--ink)}
+.t{fill:var(--ink);font:13px "IBM Plex Sans",system-ui,sans-serif}
+.tb{fill:var(--ink);font:600 13px "IBM Plex Sans",system-ui,sans-serif}
+.th{fill:var(--ink);font:600 16px "IBM Plex Sans Condensed","IBM Plex Sans",sans-serif}
+.tm{fill:var(--ink);font:12px "IBM Plex Mono",monospace}
+.ts{fill:var(--muted);font:11.5px "IBM Plex Sans",system-ui,sans-serif}
+.tg{fill:var(--muted);font:600 11px "IBM Plex Mono",monospace;letter-spacing:.06em}
+.w{fill:none;stroke-width:2.2;stroke-linejoin:round}
+.w10{stroke:var(--w10)} .w5{stroke:var(--w5)} .w33{stroke:var(--w33)} .wg{stroke:var(--gnd)}
+.wi{stroke:var(--i2c)} .wp{stroke:var(--pwm)} .ws{stroke:var(--sig)} .wk{stroke:var(--ink)}
+.c10{fill:var(--w10)} .c5{fill:var(--w5)} .c33{fill:var(--w33)} .ci{fill:var(--i2c)} .cp{fill:var(--pwm)} .cs{fill:var(--sig)} .cg{fill:var(--gnd)} .ck{fill:var(--ink)}
+.gs{color:var(--gnd)}
+.thick{stroke-width:4}
+.dash{stroke-dasharray:6 5}
+</style>
+</head>
+<body>
+
+<main>
+  <header style="display:grid;gap:14px">
+    <h1>Auto Mixer Wiring</h1>
+    <div class="titleblock">
+      <div><span class="k">Drawing</span><span class="v">O2/He blending controller, all field wiring</span></div>
+      <div><span class="k">Board</span><span class="v">ESP32-8048S070</span></div>
+      <div><span class="k">Firmware</span><span class="v">main</span></div>
+      <div><span class="k">Unit</span><span class="v">v0.9</span></div>
+      <div><span class="k">Date</span><span class="v">2026-09-25</span></div>
+    </div>
+  </header>
+
+  <section>
+    <h2>Overview</h2>
+    <div class="legend" aria-label="Wire colours">
+      <span><i style="border-color:var(--w10)"></i>+12 V supply and valve rail</span>
+      <span><i style="border-color:var(--w5)"></i>+5 V</span>
+      <span><i style="border-color:var(--w33)"></i>+3.3 V</span>
+      <span><i style="border-color:var(--gnd)"></i>Ground</span>
+      <span><i style="border-color:var(--i2c)"></i>I2C</span>
+      <span><i style="border-color:var(--pwm)"></i>Valve PWM</span>
+      <span><i style="border-color:var(--sig)"></i>Sensor / input signal</span>
+    </div>
+    <figure class="wide">
+      <div class="scroll">
+      <svg viewBox="0 0 1200 790" role="img" aria-label="Wiring overview: a regulated, fused 12 volt supply feeds a 5 volt buck to the board's P1 header and the two valve driver boards. The buck's IN− goes to the star ground point and its OUT− feeds P1 GND, so the board's ground returns through the buck. The ADS1115 connects to GPIO 19 and 20 on P3 with power from P4 and reads two O2 cells and two pressure transducers. GPIO 17 on P5 and GPIO 11 on P2 drive optoisolated AOD4184 breakout boards, switching the O2 and helium valves on the low side; the boards' input ground comes from P5's GND pin and their + terminals from the 12 volt rail; each valve's two leads run to its board, where the flyback diode sits. A current switch closes GPIO 12 to ground while the compressor runs.">
+        <defs>
+          <g id="gnd1" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M0 0v8M-9 8h18M-5.5 12.5h11M-2 17h4"/></g>
+        </defs>
+
+        <!-- Power -->
+        <rect class="box" x="20" y="62" width="150" height="64" rx="3"/>
+        <text class="tb" x="95" y="89" text-anchor="middle">DC supply</text>
+        <text class="ts" x="95" y="107" text-anchor="middle">12 V regulated · 2 A</text>
+        <path class="w w10" d="M170 94H200M200 45V745H580M200 45H230"/>
+        <circle class="c10" cx="200" cy="94" r="3.5"/>
+        <path class="w wg" d="M95 126V140"/>
+        <use href="#gnd1" class="gs" x="95" y="140"/>
+        <text class="ts" x="95" y="176" text-anchor="middle">supply − is the</text>
+        <text class="ts" x="95" y="191" text-anchor="middle">star ground point</text>
+
+        <rect class="box" x="230" y="20" width="150" height="50" rx="3"/>
+        <text class="tb" x="305" y="41" text-anchor="middle">Buck converter</text>
+        <text class="ts" x="305" y="59" text-anchor="middle">12 V → 5 V · 2.5–3 A</text>
+        <!-- Buck ground: IN− to the star; OUT− (the same copper on the module) feeds P1 GND -->
+        <path class="w wg" d="M260 70V82"/>
+        <use href="#gnd1" class="gs" x="260" y="82"/>
+        <text class="ts" x="274" y="96">IN− to star</text>
+        <text class="ts" x="386" y="120" text-anchor="end">OUT−</text>
+
+        <!-- 5 V to P1 and transducers -->
+        <path class="w w5" d="M380 45H560M405 45V250H430"/>
+        <circle class="c5" cx="405" cy="45" r="3.5"/>
+        <text class="t" x="568" y="49" style="fill:var(--w5)">+5 V → transducer excitation</text>
+
+        <!-- 12 V valve rail -->
+        <text class="t" x="342" y="766" style="fill:var(--w10)">+12 V valve rail · duty capped at 69%</text>
+
+        <!-- Board -->
+        <rect class="board" x="430" y="200" width="300" height="380" rx="8"/>
+        <text class="th" x="580" y="392" text-anchor="middle">ESP32-8048S070</text>
+        <text class="ts" x="580" y="411" text-anchor="middle">rear headers</text>
+
+        <!-- P1 -->
+        <text class="tg" x="444" y="232">P1</text>
+        <rect class="pin" x="426" y="246" width="8" height="8"/><text class="tm" x="444" y="254">+5V</text>
+        <rect class="pin" x="426" y="271" width="8" height="8"/><text class="tm" x="444" y="279">GND</text>
+        <rect class="pin" x="426" y="296" width="8" height="8"/><text class="tm" x="444" y="304">RXD <tspan class="ts">leave open</tspan></text>
+        <rect class="pin" x="426" y="321" width="8" height="8"/><text class="tm" x="444" y="329">TXD <tspan class="ts">leave open</tspan></text>
+        <path class="w wg" d="M426 275H395V80H370V70"/>
+
+        <!-- P3, and P4's power pins (P4 carries only the ADS1115's power) -->
+        <text class="tg" x="716" y="232" text-anchor="end">P3</text>
+        <rect class="pin" x="726" y="246" width="8" height="8"/><text class="tm" x="716" y="254" text-anchor="end">IO19</text>
+        <rect class="pin" x="726" y="271" width="8" height="8"/><text class="tm" x="716" y="279" text-anchor="end">IO20</text>
+        <text class="tg" x="716" y="303" text-anchor="end">P4</text>
+        <text class="ts" x="716" y="370" text-anchor="end">P4: ADS1115 power only</text>
+        <rect class="pin" x="726" y="316" width="8" height="8"/><text class="tm" x="716" y="324" text-anchor="end">3.3V</text>
+        <rect class="pin" x="726" y="341" width="8" height="8"/><text class="tm" x="716" y="349" text-anchor="end">GND</text>
+
+        <path class="w wi" d="M734 250H800M734 275H800"/>
+        <text class="t" x="767" y="244" text-anchor="middle" style="fill:var(--i2c)">SDA</text>
+        <text class="t" x="767" y="269" text-anchor="middle" style="fill:var(--i2c)">SCL</text>
+        <path class="w w33" d="M734 320H800"/>
+        <text class="t" x="767" y="314" text-anchor="middle" style="fill:var(--w33)">3.3 V</text>
+        <path class="w wg" d="M734 345H800"/>
+        <text class="t" x="767" y="339" text-anchor="middle" style="fill:var(--gnd)">GND</text>
+
+        <!-- ADS1115 -->
+        <rect class="box" x="800" y="215" width="140" height="215" rx="3"/>
+        <text class="tb" x="870" y="232" text-anchor="middle">ADS1115</text>
+        <text class="tm" x="810" y="254">SDA</text>
+        <text class="tm" x="810" y="279">SCL</text>
+        <text class="tm" x="810" y="324">VDD</text>
+        <text class="tm" x="810" y="349">GND</text>
+        <text class="tm" x="810" y="389">ADDR</text>
+        <text class="tm" x="930" y="249" text-anchor="end">A0</text>
+        <text class="tm" x="930" y="294" text-anchor="end">A1</text>
+        <text class="tm" x="930" y="344" text-anchor="end">A2</text>
+        <text class="tm" x="930" y="394" text-anchor="end">A3</text>
+        <text class="ts" x="870" y="420" text-anchor="middle">I2C 0x48</text>
+        <text class="ts" x="870" y="448" text-anchor="middle">GND terminal = sensor ground:</text>
+        <text class="ts" x="870" y="463" text-anchor="middle">both O2 cells, both transducers,</text>
+        <text class="ts" x="870" y="478" text-anchor="middle">compressor switch return</text>
+        <path class="w wg" d="M800 385H784V394"/>
+        <use href="#gnd1" class="gs" x="784" y="394"/>
+
+        <!-- Sensors -->
+        <text class="tg" x="1102" y="212" text-anchor="middle">SENSORS</text>
+        <path class="w ws" d="M940 245H1020M940 290H1020M940 340H960M1010 340H1020M940 390H960M1010 390H1020"/>
+        <rect class="box" x="960" y="329" width="50" height="22" rx="2"/><text class="tm" x="985" y="344" text-anchor="middle" style="font-size:10px">10k/20k</text>
+        <rect class="box" x="960" y="379" width="50" height="22" rx="2"/><text class="tm" x="985" y="394" text-anchor="middle" style="font-size:10px">10k/20k</text>
+
+        <rect class="box" x="1020" y="227" width="165" height="36" rx="3"/>
+        <text class="tb" x="1030" y="242">O2 cell · after He</text>
+        <text class="ts" x="1030" y="256">− lead to ADS1115 GND</text>
+        <rect class="box" x="1020" y="272" width="165" height="36" rx="3"/>
+        <text class="tb" x="1030" y="287">O2 cell · final mix</text>
+        <text class="ts" x="1030" y="301">− lead to ADS1115 GND</text>
+        <rect class="box" x="1020" y="322" width="165" height="36" rx="3"/>
+        <text class="tb" x="1030" y="337">Bank transducer</text>
+        <text class="ts" x="1030" y="351">+5 V buck · GND to ADS GND</text>
+        <rect class="box" x="1020" y="372" width="165" height="36" rx="3"/>
+        <text class="tb" x="1030" y="387">Fill transducer</text>
+        <text class="ts" x="1030" y="401">+5 V buck · GND to ADS GND</text>
+
+        <!-- P5 (O2 PWM and the breakouts' input GND) / P2 -->
+        <text class="tg" x="520" y="546" text-anchor="middle">P5</text>
+        <rect class="pin" x="476" y="572" width="8" height="8"/><text class="tm" x="480" y="564" text-anchor="middle">IO17</text>
+        <text class="tg" x="665" y="546" text-anchor="middle">P2</text>
+        <rect class="pin" x="636" y="572" width="8" height="8"/><text class="tm" x="640" y="564" text-anchor="middle">IO11</text>
+        <rect class="pin" x="686" y="572" width="8" height="8"/><text class="tm" x="690" y="564" text-anchor="middle">IO12</text>
+        <rect class="pin" x="556" y="572" width="8" height="8"/><text class="tm" x="560" y="564" text-anchor="middle">GND</text>
+        <!-- P5 GND: the breakouts' isolated input ground -->
+        <path class="w wg" d="M560 580V622M525 622H595M525 622V640M595 622V640"/>
+        <circle class="cg" cx="560" cy="622" r="3.5"/>
+        <!-- +12 V to each breakout's + terminal -->
+        <path class="w w10" d="M430 700V745M580 700V745"/>
+        <circle class="c10" cx="430" cy="745" r="3.5"/>
+        
+
+        <path class="w wp" d="M480 580V640M640 580V640"/>
+        <text class="t" x="472" y="614" text-anchor="end" style="fill:var(--pwm)">PWM 1 kHz</text>
+        <text class="t" x="632" y="600" text-anchor="end" style="fill:var(--pwm)">PWM 1 kHz</text>
+        <path class="w ws" d="M690 580V608H1092V640"/>
+        <text class="t" x="890" y="600" text-anchor="middle" style="fill:var(--sig)">LOW = compressor running</text>
+
+        <!-- Valves and drivers -->
+        <rect class="box" x="270" y="640" width="114" height="60" rx="3"/>
+        <text class="tb" x="327" y="663" text-anchor="middle">O2 valve</text>
+        <text class="ts" x="327" y="681" text-anchor="middle">Kelly 0–10 V coil</text>
+        <path class="w w10" d="M384 664H405M384 676H405M715 664H745M715 676H745"/>
+        <rect class="box" x="405" y="640" width="150" height="60" rx="3"/>
+        <text class="tb" x="480" y="663" text-anchor="middle">AOD4184 breakout</text>
+        <text class="ts" x="480" y="681" text-anchor="middle">O2 · detail in Fig. 2</text>
+        <rect class="box" x="565" y="640" width="150" height="60" rx="3"/>
+        <text class="tb" x="640" y="663" text-anchor="middle">AOD4184 breakout</text>
+        <text class="ts" x="640" y="681" text-anchor="middle">He · detail in Fig. 2</text>
+        <rect class="box" x="745" y="640" width="115" height="60" rx="3"/>
+        <text class="tb" x="802" y="663" text-anchor="middle">He valve</text>
+        <text class="ts" x="802" y="681" text-anchor="middle">Kelly 0–10 V coil</text>
+
+        <path class="w wg" d="M480 700V710M640 700V710"/>
+        <use href="#gnd1" class="gs" x="480" y="710"/>
+        <use href="#gnd1" class="gs" x="640" y="710"/>
+        <text class="ts" x="494" y="724">to star point</text>
+        <text class="ts" x="654" y="724">to star point</text>
+
+        <!-- Compressor -->
+        <rect class="box" x="1000" y="640" width="185" height="60" rx="3"/>
+        <text class="tb" x="1092" y="663" text-anchor="middle">Current switch</text>
+        <text class="ts" x="1092" y="681" text-anchor="middle">CT with relay contact</text>
+        <path class="w wg" d="M1092 700V710"/>
+        <use href="#gnd1" class="gs" x="1092" y="710"/>
+        <text class="ts" x="1106" y="724">ADS1115 GND</text>
+        <text class="ts" x="1092" y="760" text-anchor="middle">clamp around one conductor</text>
+        <text class="ts" x="1092" y="775" text-anchor="middle">of the compressor supply</text>
+      </svg>
+      </div>
+      <figcaption><b>Fig. 1.</b> Every connection to the board. Power comes in through P1, not USB-C (USB can stay plugged in for flashing). The buck's IN− and OUT− are the same copper, so P1 GND reaches the star through the buck; don't also wire P1 GND to the star. The ADS1115 has no power on P3, so it takes 3.3 V and GND from P4; P4 carries nothing else. P5 (wired in parallel with P4) carries the valve side: IO17 for the O2 valve's PWM and GND as the input ground of both valve boards (Fig. 2). On both plugs, leave the IO18 wire unconnected: it's the touch controller's interrupt. Every sensor ground (both O2 cells' − leads, both transducers' GND and the compressor switch's return) lands on the ADS1115's GND terminal, the point it measures against; that terminal returns to the star via P4, the board, P1 and the buck. Every ground symbol ends at the one star point in Fig. 3.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Pins</h2>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Connection</th><th>GPIO</th><th>Header</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Board power</td><td>+5V, GND</td><td>P1</td><td>Regulated 5 V, budget 2 A. Leave RXD/TXD unconnected.</td></tr>
+        <tr><td>ADS1115 SDA</td><td>19</td><td>P3 pin 3</td><td>Shared with the GT911 touch controller (0x5D). ADS1115 sits at 0x48, ADDR to GND.</td></tr>
+        <tr><td>ADS1115 SCL</td><td>20</td><td>P3 pin 4</td><td></td></tr>
+        <tr><td>ADS1115 power</td><td>3.3V, GND</td><td>P4</td><td>Nothing else on this plug. Cut back and insulate the IO17 and IO18 wires (IO18 is the touch interrupt).</td></tr>
+        <tr><td>O2 valve</td><td>17</td><td>P5</td><td>PWM 1 kHz, 10-bit. No pull-up on the board. P5's GND is both valve boards' input ground; cut back and insulate its IO18 and 3.3V wires.</td></tr>
+        <tr><td>He valve</td><td>11</td><td>P2</td><td>PWM 1 kHz, 10-bit. <b>Pulled HIGH by the board until the firmware runs</b>; the 1k pull-down is mandatory.</td></tr>
+        <tr><td>Compressor running</td><td>12</td><td>P2</td><td>Input, board pull-up. LOW = running. Valves stay closed while it reads HIGH. P2 has no GND: take the switch's return to the ADS1115 GND terminal.</td></tr>
+        <tr><td>O2 cell, after He</td><td>A0</td><td>ADS1115</td><td>Helium is derived from this cell. Read at ±0.256 V range. About 10 mV in air.</td></tr>
+        <tr><td>O2 cell, final mix</td><td>A1</td><td>ADS1115</td><td>Read at ±0.256 V range. About 10 mV in air.</td></tr>
+        <tr><td>Bank pressure</td><td>A2</td><td>ADS1115</td><td>Through the 10k/20k divider in Fig. 4.</td></tr>
+        <tr><td>Fill pressure</td><td>A3</td><td>ADS1115</td><td>Through the 10k/20k divider in Fig. 4.</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Panel jacks</h2>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Jack (3.5 mm, TRS plug)</th><th>Tip (pin 2)</th><th>Ring (pin 3)</th><th>Sleeve (pin 4)</th></tr></thead>
+      <tbody>
+        <tr><td>O2 cell, after He</td><td>ADS1115 A0, direct</td><td>&ndash;</td><td>Quiet ground (ADS1115 GND)</td></tr>
+        <tr><td>O2 cell, final mix</td><td>ADS1115 A1, direct</td><td>&ndash;</td><td>Quiet ground</td></tr>
+        <tr><td>Bank transducer</td><td>+5 V from the buck</td><td>Divider 10k end; divider out to A2</td><td>Quiet ground</td></tr>
+        <tr><td>Fill transducer</td><td>+5 V from the buck</td><td>Divider 10k end; divider out to A3</td><td>Quiet ground</td></tr>
+        <tr><td>He valve</td><td>He board + (12 V)</td><td>&ndash;</td><td>He board LOAD</td></tr>
+        <tr><td>O2 valve</td><td>O2 board + (12 V)</td><td>&ndash;</td><td>O2 board LOAD</td></tr>
+        <tr><td>Compressor sense</td><td>IO12 (P2)</td><td>Quiet ground</td><td>&ndash;</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="warn">Pin 1 is unused. Every supply sits on the tip (+12 V on the valves, +5 V on the transducers), so plugging in with the power on can't short a supply, and a valve plug's barrel touching ground can't either. The jacks are identical, so label and colour-code them: a valve plugged into a transducer jack sits half open on 5 V with no command, and a sensor plugged into a valve jack gets 12 V. A compressor plug with tip and ring joined fakes "compressor running" and defeats the valve interlock: bench tests only, labelled TEST ONLY.</div>
+  </section>
+
+  <section>
+    <h2>Valve driver, one per valve</h2>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 720 400" role="img" aria-label="Valve driver using an optoisolated AOD4184 breakout board. Fused +12 volts goes to the board's plus terminal only. The valve's two leads, as a twisted pair, go to the plus and LOAD terminals, and a 1N5819 flyback diode sits at the board across plus and LOAD, band to plus. The minus terminal runs on its own wire to the star ground. On the isolated input side, the ESP32 GPIO goes to PWM, a 1k pull-down runs from PWM to the header GND, and the header GND goes to the ESP32 board's ground on P5.">
+        <defs>
+          <g id="gnd3" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M0 0v8M-9 8h18M-5.5 12.5h11M-2 17h4"/></g>
+        </defs>
+        <!-- +12 V feeds the board's + terminal only; the valve's + lead and the
+             diode's band also land on +, the valve's − lead and the diode on LOAD -->
+        <text class="t" x="395" y="74" text-anchor="end" style="fill:var(--w10)">+12 V supply (fused)</text>
+        <path class="w w10" d="M400 70H520V145M520 163V180M480 130H650V135M650 175V180H480"/>
+        <circle class="c10" cx="520" cy="130" r="3.5"/>
+        <circle class="c10" cx="520" cy="180" r="3.5"/>
+        <polygon class="ck" points="510,163 530,163 520,145"/>
+        <path class="w wk" d="M509 145H531"/>
+        <text class="tb" x="534" y="92">flyback diode at the board</text>
+        <text class="ts" x="534" y="108">1N5819, band to +</text>
+        <rect class="box" x="635" y="135" width="30" height="40" rx="2"/>
+        <text class="ts" x="590" y="155" text-anchor="middle">twisted</text>
+        <text class="ts" x="590" y="170" text-anchor="middle">pair</text>
+        <text class="tb" x="650" y="204" text-anchor="middle">valve coil</text>
+        <text class="ts" x="650" y="220" text-anchor="middle">10 V, ~55 Ω</text>
+
+        <!-- - terminal to the star, carrying the valve current -->
+        <path class="w wg thick" d="M480 230H530V318"/>
+        <use xlink:href="#gnd3" class="gs" x="530" y="318"/>
+        <text class="ts" x="546" y="332">own wire to the star point</text>
+        <text class="ts" x="546" y="347">(carries the valve current)</text>
+
+        <!-- breakout board -->
+        <rect class="box" x="220" y="90" width="260" height="170" rx="4"/>
+        <text class="tg" x="350" y="110" text-anchor="middle">AOD4184 BREAKOUT</text>
+        <text class="tm" x="470" y="134" text-anchor="end">+</text>
+        <text class="tm" x="470" y="184" text-anchor="end">LOAD</text>
+        <text class="tm" x="470" y="234" text-anchor="end">−</text>
+        <text class="tm" x="230" y="154">PWM</text>
+        <text class="tm" x="230" y="214">GND</text>
+        <text class="ts" x="382" y="164" text-anchor="middle">optoisolated input,</text>
+        <text class="ts" x="382" y="180" text-anchor="middle">1k resistor built in</text>
+        <text class="ts" x="382" y="196" text-anchor="middle">LOAD = drain · − = source</text>
+        <path class="w wk dash" d="M285 122V250" style="stroke:var(--muted);stroke-width:1.2"/>
+        <circle class="ck" cx="480" cy="130" r="4"/>
+        <circle class="ck" cx="480" cy="180" r="4"/>
+        <circle class="ck" cx="480" cy="230" r="4"/>
+        <circle class="ck" cx="220" cy="150" r="4"/>
+        <circle class="ck" cx="220" cy="210" r="4"/>
+
+        <!-- isolated input side -->
+        <rect class="box" x="20" y="130" width="120" height="40" rx="3"/>
+        <text class="tb" x="80" y="147" text-anchor="middle">ESP32 GPIO</text>
+        <text class="ts" x="80" y="162" text-anchor="middle">17 = O2 · 11 = He</text>
+        <path class="w wp" d="M140 150H220M180 150V162M180 198V210"/>
+        <path class="w wg" d="M220 210H80V270"/>
+        <circle class="cp" cx="180" cy="150" r="3.5"/>
+        <circle class="cg" cx="180" cy="210" r="3.5"/>
+        <rect class="box" x="172" y="162" width="16" height="36" rx="2"/>
+        <text class="tm" x="166" y="185" text-anchor="end">1k pull-down</text>
+        <rect class="box" x="20" y="270" width="120" height="40" rx="3"/>
+        <text class="tb" x="80" y="287" text-anchor="middle">ESP32 GND</text>
+        <text class="ts" x="80" y="302" text-anchor="middle">P5 GND pin</text>
+
+        <rect x="20" y="330" width="440" height="56" rx="3" style="fill:var(--warn-bg)"/>
+        <text class="ts" x="32" y="350" style="fill:var(--warn-ink)">The header GND is the opto LED's return and must reach the board.</text>
+        <text class="ts" x="32" y="366" style="fill:var(--warn-ink)">It isn't connected to +, LOAD or −, so valve current can't get into</text>
+        <text class="ts" x="32" y="381" style="fill:var(--warn-ink)">the board's ground this way. No extra series resistor needed.</text>
+      </svg>
+      </div>
+      <figcaption><b>Fig. 2.</b> Each valve is driven by an optoisolated D4184 breakout (power terminals + / LOAD / −, input header PWM / GND) switching the coil's low side. The input side is isolated: its GND is the opto LED's return and goes to the ESP32 board's ground (P5's GND pin, so the pulsed LED current doesn't share the ADS1115's ground wire on P4). The board has its own 1k input resistor, so the GPIO goes straight to PWM. The 1k pull-down from PWM to GND is mandatory on the helium pin: the board's 10k pull-up would otherwise light the opto through reset and flashing, so the valve could open before the firmware starts. The opto drives the gate to about half the supply (~6 V from 12 V). The board has no flyback diode: fit one across + and LOAD at the board, and take the valve's + lead from the same + terminal, so the PWM switching current stays on the board and the valve wires carry a near-steady current. The coil sits on the 12 V supply, so the firmware caps the duty at 69% to keep this 10 V coil within its 1.8 W rating.</figcaption>
+    </figure>
+  </section>
+
+  <div class="grid2">
+    <section>
+      <h2>Grounding</h2>
+      <figure>
+        <svg viewBox="0 0 720 260" role="img" aria-label="Star grounding: the supply negative, the board ground, and both valve driver sources each run their own wire to one star point. Valve current returns from the drivers to the star and the supply without passing through the board's ground.">
+          <rect class="box" x="20" y="140" width="150" height="44" rx="3"/>
+          <text class="tb" x="95" y="167" text-anchor="middle">DC supply −</text>
+          <rect class="box" x="90" y="24" width="230" height="50" rx="3"/>
+          <text class="tb" x="205" y="45" text-anchor="middle">Buck IN− (board GND)</text>
+          <text class="ts" x="205" y="62" text-anchor="middle">ADS1115, O2 cells, transducers</text>
+          <rect class="box" x="440" y="24" width="190" height="50" rx="3"/>
+          <text class="tb" x="535" y="45" text-anchor="middle">O2 driver source</text>
+          <text class="ts" x="535" y="62" text-anchor="middle">O2 valve return</text>
+          <rect class="box" x="540" y="140" width="160" height="44" rx="3"/>
+          <text class="tb" x="620" y="160" text-anchor="middle">He driver source</text>
+          <text class="ts" x="620" y="176" text-anchor="middle">He valve return</text>
+
+          <path class="w wg" d="M205 74L360 162"/>
+          <path class="w w10 thick" d="M170 162H360H540M535 74L360 162"/>
+          <circle class="ck" cx="360" cy="162" r="7"/>
+          <text class="tb" x="360" y="200" text-anchor="middle">star point</text>
+          <text class="ts" x="360" y="217" text-anchor="middle">one terminal at the supply −</text>
+
+          <path class="w wk dash" d="M440 49H320"/>
+          <text class="ts" x="380" y="41" text-anchor="middle">✕ not via the board</text>
+          <text class="ts" x="360" y="248" text-anchor="middle">thick red = where the PWM valve current flows</text>
+        </svg>
+        <figcaption><b>Fig. 3.</b> The O2 cells put out about 10 mV, so a few millivolts of PWM valve current in a shared ground wire would show up as O2 error. Keep the valve returns on their own wires back to the star.</figcaption>
+      </figure>
+    </section>
+
+    <section>
+      <h2>Pressure divider</h2>
+      <figure>
+        <svg viewBox="0 0 640 200" role="img" aria-label="Pressure divider: the transducer output passes a 10k resistor to the ADS1115 input, with a 20k resistor from that input to ground, scaling 4.5 volts to 3.0 volts.">
+          <defs>
+            <g id="gnd4" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M0 0v8M-9 8h18M-5.5 12.5h11M-2 17h4"/></g>
+          </defs>
+          <rect class="box" x="20" y="64" width="150" height="56" rx="3"/>
+          <text class="tb" x="95" y="88" text-anchor="middle">Pressure transducer</text>
+          <text class="ts" x="95" y="105" text-anchor="middle">0.5–4.5 V out</text>
+          <path class="w w5" d="M95 64V34"/>
+          <text class="t" x="103" y="38" style="fill:var(--w5)">+5 V</text>
+          <path class="w wg" d="M95 120V140"/>
+          <use href="#gnd4" class="gs" x="95" y="140"/>
+
+          <path class="w ws" d="M170 92H230M290 92H470M340 92V112M340 152V164"/>
+          <circle class="cs" cx="340" cy="92" r="3.5"/>
+          <rect class="box" x="230" y="84" width="60" height="16" rx="2"/>
+          <text class="tm" x="260" y="76" text-anchor="middle">10k</text>
+          <rect class="box" x="332" y="112" width="16" height="40" rx="2"/>
+          <text class="tm" x="358" y="136">20k</text>
+          <use href="#gnd4" class="gs" x="340" y="164"/>
+          <text class="ts" x="405" y="84" text-anchor="middle">≤ 3.0 V</text>
+
+          <rect class="box" x="470" y="72" width="150" height="40" rx="3"/>
+          <text class="tb" x="545" y="97" text-anchor="middle">ADS1115 A2 / A3</text>
+        </svg>
+        <figcaption><b>Fig. 4.</b> The ADS1115 runs from 3.3 V and must never see more than 3.6 V on an input, so the 4.5 V full-scale output is divided down to 3.0 V. The 0–5000 PSI scaling in the firmware is a placeholder until the real transducer is chosen.</figcaption>
+      </figure>
+    </section>
+  </div>
+
+  <section>
+    <h2>Before any gas is connected</h2>
+    <div class="warn">With the 12 V supply <b>off</b> and the board powered from USB, flash it and confirm each valve board's PWM pin stays below 0.5 V throughout. That proves the pull-downs are holding the valves shut through reset and flashing.</div>
+    <ul class="checks">
+      <li>Fit the flyback diode on both valves; without it the turn-off spike eventually kills the MOSFET.</li>
+      <li>Use a <b>regulated</b> 12 V supply and measure it under load. The firmware caps valve drive at 69% (<code>VALVE_MAX_DUTY</code>) so the 10 V coils stay within 1.8 W; a supply above 12 V overdrives them.</li>
+      <li>Set the O2 and He regulators below the valves' 100 psig rating.</li>
+      <li>Keep the SD slot empty: GPIO 11 and 12 are its data and clock lines.</li>
+      <li>Clamp the current switch around one conductor only; around the whole cable the currents cancel. Work on the mains side belongs with someone qualified.</li>
+      <li>Calibrate both O2 cells in air from the unit before blending. The valves stay closed until the cells have been calibrated.</li>
+    </ul>
+  </section>
+</main>
+
+</body>
+</html>

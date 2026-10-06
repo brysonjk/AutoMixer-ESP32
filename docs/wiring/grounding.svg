@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 720 260" role="img" aria-label="Star grounding: the supply negative, the board ground, and both valve driver sources each run their own wire to one star point. Valve current returns from the drivers to the star and the supply without passing through the board's ground." width="720" height="260">
+<style>svg{
+  --paper:#EEF1F0; --sheet:#FFFFFF; --ink:#1A2328; --muted:#5B6870; --rule:#CBD3D6; --box:#F3F6F6; --board:#E6EEEA;
+  --w10:#C62828; --w5:#C75F00; --w33:#8C6A00; --gnd:#3B4A52; --i2c:#1F63C6; --pwm:#13804A; --sig:#7A3DB8;
+  --warn-bg:#FFF4E5; --warn-ink:#7A3E00;
+}
+@media (prefers-color-scheme: dark){svg{
+  color-scheme:dark;
+  --paper:#0E1316; --sheet:#151C20; --ink:#DCE3E6; --muted:#93A1A8; --rule:#2C373D; --box:#1B2429; --board:#172620;
+  --w10:#FF6B6B; --w5:#FFA24D; --w33:#E3C04A; --gnd:#9AABB3; --i2c:#6AA5FF; --pwm:#4FCB86; --sig:#B98CF0;
+  --warn-bg:#2A1E10; --warn-ink:#FFC680;
+}}
+.bg{fill:var(--sheet)}
+/* diagram classes */
+.box{fill:var(--box);stroke:var(--ink);stroke-width:1.2}
+.board{fill:var(--board);stroke:var(--ink);stroke-width:1.6}
+.pin{fill:var(--ink)}
+.t{fill:var(--ink);font:13px "IBM Plex Sans",system-ui,sans-serif}
+.tb{fill:var(--ink);font:600 13px "IBM Plex Sans",system-ui,sans-serif}
+.th{fill:var(--ink);font:600 16px "IBM Plex Sans Condensed","IBM Plex Sans",sans-serif}
+.tm{fill:var(--ink);font:12px "IBM Plex Mono",monospace}
+.ts{fill:var(--muted);font:11.5px "IBM Plex Sans",system-ui,sans-serif}
+.tg{fill:var(--muted);font:600 11px "IBM Plex Mono",monospace;letter-spacing:.06em}
+.w{fill:none;stroke-width:2.2;stroke-linejoin:round}
+.w10{stroke:var(--w10)} .w5{stroke:var(--w5)} .w33{stroke:var(--w33)} .wg{stroke:var(--gnd)}
+.wi{stroke:var(--i2c)} .wp{stroke:var(--pwm)} .ws{stroke:var(--sig)} .wk{stroke:var(--ink)}
+.c10{fill:var(--w10)} .c5{fill:var(--w5)} .c33{fill:var(--w33)} .ci{fill:var(--i2c)} .cp{fill:var(--pwm)} .cs{fill:var(--sig)} .cg{fill:var(--gnd)} .ck{fill:var(--ink)}
+.gs{color:var(--gnd)}
+.thick{stroke-width:4}
+.dash{stroke-dasharray:6 5}
+</style>
+<rect class="bg" x="0" y="0" width="720" height="260"/>
+          <rect class="box" x="20" y="140" width="150" height="44" rx="3"/>
+          <text class="tb" x="95" y="167" text-anchor="middle">DC supply −</text>
+          <rect class="box" x="90" y="24" width="230" height="50" rx="3"/>
+          <text class="tb" x="205" y="45" text-anchor="middle">Buck IN− (board GND)</text>
+          <text class="ts" x="205" y="62" text-anchor="middle">ADS1115, O2 cells, transducers</text>
+          <rect class="box" x="440" y="24" width="190" height="50" rx="3"/>
+          <text class="tb" x="535" y="45" text-anchor="middle">O2 driver source</text>
+          <text class="ts" x="535" y="62" text-anchor="middle">O2 valve return</text>
+          <rect class="box" x="540" y="140" width="160" height="44" rx="3"/>
+          <text class="tb" x="620" y="160" text-anchor="middle">He driver source</text>
+          <text class="ts" x="620" y="176" text-anchor="middle">He valve return</text>
+
+          <path class="w wg" d="M205 74L360 162"/>
+          <path class="w w10 thick" d="M170 162H360H540M535 74L360 162"/>
+          <circle class="ck" cx="360" cy="162" r="7"/>
+          <text class="tb" x="360" y="200" text-anchor="middle">star point</text>
+          <text class="ts" x="360" y="217" text-anchor="middle">one terminal at the supply −</text>
+
+          <path class="w wk dash" d="M440 49H320"/>
+          <text class="ts" x="380" y="41" text-anchor="middle">✕ not via the board</text>
+          <text class="ts" x="360" y="248" text-anchor="middle">thick red = where the PWM valve current flows</text>
+        </svg>
