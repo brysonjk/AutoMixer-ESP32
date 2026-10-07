@@ -250,6 +250,7 @@ void FillStationGUI::init() {
     createBlenderScreen();
     createNetworkScreen();
     createPressureCalScreen();
+    createValveTestScreen();
 
     createEmergencyStop();
     applyBlenderSettings();
@@ -337,11 +338,14 @@ void FillStationGUI::createSetupMenu() {
         {"Network", "WiFi, IP address, remote control", menu_network_handler},
         {"Pressure Calibration", "Zero and span for the bank and fill sensors",
          menu_pcal_handler},
+        {"Valve Test", "Find where each valve starts to flow",
+         menu_valvetest_handler},
     };
-    for (int i = 0; i < 3; i++) {
+    // Four rows, kept clear of the E-STOP along the bottom.
+    for (int i = 0; i < 4; i++) {
         lv_obj_t* btn = lv_btn_create(screen_menu);
-        lv_obj_set_size(btn, 460, 92);
-        lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 70 + i * 110);
+        lv_obj_set_size(btn, 460, 78);
+        lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 56 + i * 88);
         lv_obj_set_style_bg_color(btn, COLOR_PICKER_BG, 0);
         lv_obj_set_style_border_width(btn, 1, 0);
         lv_obj_set_style_border_color(btn, COLOR_BTN, 0);
@@ -349,11 +353,12 @@ void FillStationGUI::createSetupMenu() {
         lv_obj_set_style_shadow_width(btn, 0, 0);
         lv_obj_add_event_cb(btn, items[i].handler, LV_EVENT_CLICKED, this);
 
-        lv_obj_t* t = make_label(btn, items[i].title, &lv_font_montserrat_28, COLOR_LABEL, 0, 0);
-        lv_obj_align(t, LV_ALIGN_TOP_LEFT, 12, 8);
+        lv_obj_set_style_pad_all(btn, 0, 0);
+        lv_obj_t* t = make_label(btn, items[i].title, &lv_font_montserrat_24, COLOR_LABEL, 0, 0);
+        lv_obj_align(t, LV_ALIGN_TOP_LEFT, 14, 10);
         lv_obj_t* n = make_label(btn, items[i].note, &lv_font_montserrat_16, COLOR_PICKER_DIM,
                                  0, 0);
-        lv_obj_align(n, LV_ALIGN_BOTTOM_LEFT, 12, -10);
+        lv_obj_align(n, LV_ALIGN_TOP_LEFT, 14, 46);
         lv_obj_t* arrow = make_label(btn, LV_SYMBOL_RIGHT, &lv_font_montserrat_24, COLOR_BTN, 0, 0);
         lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -8, 0);
     }
@@ -362,6 +367,12 @@ void FillStationGUI::createSetupMenu() {
 static const char* UNITS_MAP[] = {"PSI", "BAR", ""};
 static const char* GAS_MODE_MAP[] = {"Trimix", "Nitrox only", ""};
 static const char* TRANSDUCER_MAP[] = {"Fitted", "None", ""};
+static const char* LEARNING_MAP[] = {"Auto", "Locked", ""};
+
+void FillStationGUI::learning_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    self->valve_ctrl->setLearningLocked(lv_btnmatrix_get_selected_btn(lv_event_get_target(e)) == 1);
+}
 
 void FillStationGUI::createBlenderScreen() {
     screen_blender = makeSubScreen("Blender Setup", setup_close_handler);
@@ -371,28 +382,34 @@ void FillStationGUI::createBlenderScreen() {
         {"Pressure units", "Bank and fill readings"},
         {"Gas mode", "Nitrox only hides helium and ignores sensor S1"},
         {"Pressure sensors", "Bank and fill transducers"},
-        {"Diagnostics", "Raw sensor mV and valve state"},
+        {"Valve learning", "Auto keeps learning each valve's holding opening"},
+        {"Diagnostics", "Raw sensor mV; valve drive while blending"},
     };
-    for (int i = 0; i < 4; i++) {
-        const lv_coord_t y = 76 + i * 74;
+    // Five rows, kept clear of the E-STOP along the bottom.
+    for (int i = 0; i < 5; i++) {
+        const lv_coord_t y = 66 + i * 70;
         make_label(screen_blender, rows[i].title, &lv_font_montserrat_24, COLOR_LABEL, 48, y);
         make_label(screen_blender, rows[i].note, &lv_font_montserrat_14, COLOR_PICKER_DIM, 48,
-                   y + 32);
+                   y + 30);
     }
 
-    lv_obj_t* bm = make_segmented(screen_blender, UNITS_MAP, units_bar ? 1 : 0, 440, 76, 300, 50);
+    lv_obj_t* bm = make_segmented(screen_blender, UNITS_MAP, units_bar ? 1 : 0, 440, 66, 300, 46);
     lv_obj_add_event_cb(bm, units_handler, LV_EVENT_VALUE_CHANGED, this);
-    bm = make_segmented(screen_blender, GAS_MODE_MAP, helium_enabled ? 0 : 1, 440, 150, 300, 50);
+    bm = make_segmented(screen_blender, GAS_MODE_MAP, helium_enabled ? 0 : 1, 440, 136, 300, 46);
     lv_obj_add_event_cb(bm, gas_mode_handler, LV_EVENT_VALUE_CHANGED, this);
-    bm = make_segmented(screen_blender, TRANSDUCER_MAP, transducers_fitted ? 0 : 1, 440, 224,
-                        300, 50);
+    bm = make_segmented(screen_blender, TRANSDUCER_MAP, transducers_fitted ? 0 : 1, 440, 206,
+                        300, 46);
     lv_obj_add_event_cb(bm, transducers_handler, LV_EVENT_VALUE_CHANGED, this);
+    bm = make_segmented(screen_blender, LEARNING_MAP, valve_ctrl->learningLocked() ? 1 : 0, 440,
+                        276, 300, 46);
+    lv_obj_add_event_cb(bm, learning_handler, LV_EVENT_VALUE_CHANGED, this);
 
-    // Diagnostics: shows each gas's ADC channel, raw mV and valve state in its sensor line.
-    // Not persisted; it's a bench aid.
+    // Diagnostics: each gas's ADC channel and raw mV in its sensor line, and both valves'
+    // opening and coil voltage on the status panel while blending. Not persisted; it's a
+    // bench aid.
     lv_obj_t* diag = lv_switch_create(screen_blender);
     lv_obj_set_size(diag, 70, 36);
-    lv_obj_set_pos(diag, 440, 305);
+    lv_obj_set_pos(diag, 440, 351);
     lv_obj_add_event_cb(diag, diagnostics_switch_handler, LV_EVENT_VALUE_CHANGED, this);
 }
 
@@ -1153,6 +1170,11 @@ void FillStationGUI::updateStatusPanel() {
         tone = TONE_GREY;
         strlcpy(headline, "Ready", sizeof(headline));
         strlcpy(detail, "Compressor stopped. Valves open once it starts.", sizeof(detail));
+    } else if (o2_over_target) {
+        tone = TONE_AMBER;
+        strlcpy(headline, "O2 over target", sizeof(headline));
+        strlcpy(detail, "O2 valve held shut until the mix falls back to its target.",
+                sizeof(detail));
     } else if (o2_knob.value <= 21.0f && he_knob.value <= 0.0f) {
         tone = TONE_GREY;
         strlcpy(headline, "Passing air", sizeof(headline));
@@ -1162,7 +1184,16 @@ void FillStationGUI::updateStatusPanel() {
         tone = TONE_GREEN;
         if (he && he_knob.value > 0.0f) snprintf(headline, sizeof(headline), "Blending %.0f/%.0f", o2_knob.value, he_knob.value);
         else snprintf(headline, sizeof(headline), "Blending EAN%.0f", o2_knob.value);
-        strlcpy(detail, "Compressor running.", sizeof(detail));
+        if (diagnostics) {
+            // Average coil voltages, assuming the regulated 12 V supply the duty cap is
+            // set for: a valve near 100% is running out of flow, not out of tuning.
+            const float o2v = valve_ctrl->getO2ValvePosition(), hev = valve_ctrl->getHeValvePosition();
+            snprintf(detail, sizeof(detail), "O2 valve %.0f%% (%.1f V)    He valve %.0f%% (%.1f V)",
+                     o2v, o2v / 100.0f * VALVE_MAX_DUTY * 12.0f, hev,
+                     hev / 100.0f * VALVE_MAX_DUTY * 12.0f);
+        } else {
+            strlcpy(detail, "Compressor running.", sizeof(detail));
+        }
     }
 
     set_text_if_changed(label_system_status, headline);
@@ -1247,6 +1278,200 @@ void FillStationGUI::createPressurePanel() {
     btn_presets = make_button(screen, "Presets", 0, ESTOP_Y, false);
     lv_obj_set_size(btn_presets, BOTTOM_BTN_W, ESTOP_H);
     lv_obj_add_event_cb(btn_presets, presets_btn_handler, LV_EVENT_CLICKED, this);
+}
+
+// ---------------------------------------------------------------------------------
+// Valve test: drive one valve by hand to find where its gas starts to flow. main.cpp
+// applies the opening only under the same guards as blending (compressor running,
+// cells calibrated, no E-STOP), and the valve shuts when the page is left, after
+// VALVE_TEST_TIMEOUT_MS untouched, or on E-STOP.
+
+#define VALVE_TEST_TIMEOUT_MS 120000
+#define COLOR_WARN lv_color_hex(0xFFB020)
+
+static const char* VALVE_TEST_GAS_MAP[] = {"O2", "Helium", ""};
+
+void FillStationGUI::createValveTestScreen() {
+    screen_valvetest = makeSubScreen("Valve Test", valvetest_back_handler);
+
+    make_label(screen_valvetest, "Valve", &lv_font_montserrat_20, COLOR_LABEL, 24, 62);
+    vt_gas = make_segmented(screen_valvetest, VALVE_TEST_GAS_MAP, 0, 24, 92, 300, 50);
+    lv_obj_add_event_cb(vt_gas, valvetest_gas_handler, LV_EVENT_VALUE_CHANGED, this);
+
+    make_label(screen_valvetest, "Opening", &lv_font_montserrat_20, COLOR_LABEL, 24, 160);
+    vt_value = make_label(screen_valvetest, "", &lv_font_montserrat_28, COLOR_LABEL, 140, 154);
+
+    vt_slider = lv_slider_create(screen_valvetest);
+    lv_obj_set_size(vt_slider, 540, 22);
+    lv_obj_set_pos(vt_slider, 34, 206);
+    lv_slider_set_range(vt_slider, 0, 100);
+    lv_obj_set_style_bg_color(vt_slider, lv_color_hex(0x2A3350), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(vt_slider, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(vt_slider, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(vt_slider, COLOR_BTN, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(vt_slider, COLOR_BTN_ACTIVE, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(vt_slider, 8, LV_PART_KNOB);
+    lv_obj_add_event_cb(vt_slider, valvetest_slider_handler, LV_EVENT_VALUE_CHANGED, this);
+
+    lv_obj_t* btn = make_action_button(screen_valvetest, "- 1", 24, 252, 80, 50, COLOR_BTN);
+    lv_obj_set_user_data(btn, (void*)(intptr_t)-1);
+    lv_obj_add_event_cb(btn, valvetest_step_handler, LV_EVENT_CLICKED, this);
+    btn = make_action_button(screen_valvetest, "+ 1", 116, 252, 80, 50, COLOR_BTN);
+    lv_obj_set_user_data(btn, (void*)(intptr_t)1);
+    lv_obj_add_event_cb(btn, valvetest_step_handler, LV_EVENT_CLICKED, this);
+    btn = make_action_button(screen_valvetest, "Close valve", 214, 252, 170, 50, COLOR_STATUS_BG);
+    lv_obj_add_event_cb(btn, valvetest_close_handler, LV_EVENT_CLICKED, this);
+    btn = make_action_button(screen_valvetest, "Save as start point", 402, 252, 230, 50,
+                             COLOR_BRAND);
+    lv_obj_add_event_cb(btn, valvetest_save_handler, LV_EVENT_CLICKED, this);
+
+    vt_readings = make_label(screen_valvetest, "", &lv_font_montserrat_24, COLOR_LABEL, 650, 62);
+    vt_starts = make_label(screen_valvetest, "", &lv_font_montserrat_16, COLOR_PICKER_DIM, 650, 132);
+    vt_learned = make_label(screen_valvetest, "", &lv_font_montserrat_16, COLOR_PICKER_DIM, 650, 182);
+    btn = make_action_button(screen_valvetest, "Forget", 650, 252, 140, 50, COLOR_STATUS_BG);
+    lv_obj_add_event_cb(btn, valvetest_forget_handler, LV_EVENT_CLICKED, this);
+
+    vt_status = make_label(screen_valvetest, "", &lv_font_montserrat_20, COLOR_LABEL, 24, 318);
+    lv_obj_t* help = make_label(screen_valvetest,
+        "With the compressor running and gas connected, raise the opening a step at a time.\n"
+        "When the reading first starts to move, tap Save. Saving at 0% clears the start point.\n"
+        "The valve closes when you leave this page, after 2 minutes untouched, or on E-STOP.",
+        &lv_font_montserrat_14, COLOR_PICKER_DIM, 24, 352);
+    lv_obj_set_width(help, 750);
+}
+
+bool FillStationGUI::valveTestActive() {
+    return screen_valvetest && lv_scr_act() == screen_valvetest;
+}
+
+void FillStationGUI::setValveTestOpening(float opening) {
+    vt_opening = constrain(opening, 0.0f, 100.0f);
+    vt_touched_ms = millis();
+    if (lv_slider_get_value(vt_slider) != (int32_t)lroundf(vt_opening)) {
+        lv_slider_set_value(vt_slider, (int32_t)lroundf(vt_opening), LV_ANIM_OFF);
+    }
+}
+
+void FillStationGUI::updateValveTestScreen() {
+    char buf[96];
+    if (vt_opening > 0.0f && millis() - vt_touched_ms > VALVE_TEST_TIMEOUT_MS) {
+        setValveTestOpening(0);
+        Serial.println("valve test: timed out, valve closed");
+    }
+
+    // Average coil voltage, assuming the regulated 12 V supply the duty cap is set for.
+    snprintf(buf, sizeof(buf), "%.0f%%   (about %.1f V)", vt_opening,
+             vt_opening / 100.0f * VALVE_MAX_DUTY * 12.0f);
+    set_text_if_changed(vt_value, buf);
+
+    const float o2 = sensors->getOxygenPercent();
+    const float he = sensors->getHeliumPercent();
+    char o2s[12], hes[12];
+    snprintf(o2s, sizeof(o2s), isnan(o2) ? "--.-" : "%.1f", o2);
+    snprintf(hes, sizeof(hes), isnan(he) ? "--.-" : "%.1f", he);
+    snprintf(buf, sizeof(buf), "O2  %s%%\nHe  %s%%", o2s, hes);
+    set_text_if_changed(vt_readings, buf);
+
+    snprintf(buf, sizeof(buf), "Start points\nO2 %.0f%%   He %.0f%%",
+             valve_ctrl->o2StartPoint(), valve_ctrl->heStartPoint());
+    set_text_if_changed(vt_starts, buf);
+
+    // What the control loops have learned: the opening that held a target.
+    char line[2][32];
+    for (int i = 0; i < 2; i++) {
+        float t, c;
+        if (valve_ctrl->learnedAt(i == 1, &t, &c) && t > 0.0f) {
+            snprintf(line[i], sizeof(line[i]), "%s %.0f%% held %.0f%%", i ? "He" : "O2", c, t);
+        } else if (valve_ctrl->learnedGain(i == 1) > 0.0f) {
+            // Learned before the target and opening were saved alongside it.
+            snprintf(line[i], sizeof(line[i]), "%s learned", i ? "He" : "O2");
+        } else {
+            snprintf(line[i], sizeof(line[i]), "%s not learned", i ? "He" : "O2");
+        }
+    }
+    snprintf(buf, sizeof(buf), "Learned%s\n%s\n%s", valve_ctrl->learningLocked() ? " (locked)" : "",
+             line[0], line[1]);
+    set_text_if_changed(vt_learned, buf);
+
+    // Mirrors the guards main.cpp applies before it drives anything.
+    lv_color_t color = COLOR_WARN;
+    if (estop_active) {
+        snprintf(buf, sizeof(buf), "EMERGENCY STOP: valves held shut");
+        color = COLOR_STATUS_TEXT;
+    } else if (!sensors->isAvailable()) {
+        snprintf(buf, sizeof(buf), "Sensor fault: valves held shut");
+        color = COLOR_STATUS_TEXT;
+    } else if (sensors->calibrating() || !sensors->isCalibrated()) {
+        snprintf(buf, sizeof(buf), "Calibrate the O2 cells first: valves held shut");
+    } else if (!compressor_running) {
+        snprintf(buf, sizeof(buf), "Start the compressor: valves only open while it runs");
+    } else if (vt_opening <= 0.0f) {
+        snprintf(buf, sizeof(buf), "Ready. Raise the opening slowly and watch the reading.");
+        color = COLOR_LABEL;
+    } else {
+        snprintf(buf, sizeof(buf), "%s valve driven at %.0f%%", vt_helium ? "Helium" : "O2",
+                 vt_opening);
+        color = COLOR_O2;
+    }
+    set_text_if_changed(vt_status, buf);
+    lv_obj_set_style_text_color(vt_status, color, 0);
+}
+
+void FillStationGUI::menu_valvetest_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    self->setValveTestOpening(0);
+    self->updateValveTestScreen();
+    lv_scr_load(self->screen_valvetest);
+}
+
+void FillStationGUI::valvetest_back_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    self->setValveTestOpening(0);
+    lv_scr_load(self->screen_menu);
+}
+
+void FillStationGUI::valvetest_gas_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    const bool helium = lv_btnmatrix_get_selected_btn(lv_event_get_target(e)) == 1;
+    if (helium != self->vt_helium) self->setValveTestOpening(0);   // never carry an opening across
+    self->vt_helium = helium;
+}
+
+void FillStationGUI::valvetest_slider_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    self->setValveTestOpening(lv_slider_get_value(lv_event_get_target(e)));
+}
+
+void FillStationGUI::valvetest_step_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    const int step = (int)(intptr_t)lv_obj_get_user_data(lv_event_get_target(e));
+    self->setValveTestOpening(self->vt_opening + step);
+}
+
+void FillStationGUI::valvetest_close_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    self->setValveTestOpening(0);
+}
+
+void FillStationGUI::valvetest_forget_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    self->valve_ctrl->forgetLearned();
+    show_notice("Forgotten", "Learned openings cleared. The next blend to each target\n"
+                             "is slower and learns them again.");
+}
+
+void FillStationGUI::valvetest_save_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    const float v = constrain(self->vt_opening, 0.0f, VALVE_START_MAX);
+    self->valve_ctrl->setStartPoint(self->vt_helium, v);
+    char buf[96];
+    if (v <= 0.0f) {
+        snprintf(buf, sizeof(buf), "%s valve start point cleared.", self->vt_helium ? "Helium" : "O2");
+    } else {
+        snprintf(buf, sizeof(buf), "%s valve now starts at %.0f%%.%s", self->vt_helium ? "Helium" : "O2",
+                 v, self->vt_opening > VALVE_START_MAX ? "\n(The most allowed is 90%.)" : "");
+    }
+    show_notice("Saved", buf);
 }
 
 // ---------------------------------------------------------------------------------
@@ -1822,6 +2047,7 @@ void FillStationGUI::update() {
     updateStatusPanel();
 
     if (lv_scr_act() == screen_pcal) updatePressureCalScreen();
+    if (lv_scr_act() == screen_valvetest) updateValveTestScreen();
 
     if (scan_pending && !wifi->scanning()) {
         scan_pending = false;
@@ -1869,17 +2095,15 @@ void FillStationGUI::update() {
         set_text_if_changed(label_fill_psi, buf);
     }
 
-    // Diagnostics replace each gas's sensor line with its ADC channel, raw mV and whether
-    // its valve is being driven.
+    // Diagnostics replace each gas's sensor line with its ADC channel and raw mV. The
+    // valve openings and coil voltages are on the status panel while blending.
     if (diagnostics) {
         char mv[12];
-        snprintf(buf, sizeof(buf), "P%u %smV PIO %s", o2_knob.channel,
-                 mv_text(sensors->getOxygenMillivolts(), mv, sizeof(mv)),
-                 valve_ctrl->getO2ValvePosition() > 0.0f ? "ON" : "OFF");
+        snprintf(buf, sizeof(buf), "A%u %smV", o2_knob.channel,
+                 mv_text(sensors->getOxygenMillivolts(), mv, sizeof(mv)));
         set_text_if_changed(label_o2_mv, buf);
-        snprintf(buf, sizeof(buf), "P%u %smV PIO %s", he_knob.channel,
-                 mv_text(sensors->getHeliumMillivolts(), mv, sizeof(mv)),
-                 valve_ctrl->getHeValvePosition() > 0.0f ? "ON" : "OFF");
+        snprintf(buf, sizeof(buf), "A%u %smV", he_knob.channel,
+                 mv_text(sensors->getHeliumMillivolts(), mv, sizeof(mv)));
         set_text_if_changed(label_he_mv, buf);
     }
 }

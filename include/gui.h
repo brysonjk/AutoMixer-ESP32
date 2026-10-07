@@ -32,6 +32,8 @@ public:
     void update();
 
     void setCompressorRunning(bool running);
+    // Set while main.cpp holds the O2 valve shut because the mix is over target.
+    void setO2OverTarget(bool over) { o2_over_target = over; }
     void setIpAddress(const char* ip);
 
     bool emergencyStopped() { return estop_active; }
@@ -53,6 +55,12 @@ public:
     bool heliumEnabled() { return helium_enabled; }        // false: Nitrox only
     bool transducersFitted() { return transducers_fitted; }
 
+    // Setup > Valve test: while its page is open, main.cpp drives the chosen valve at
+    // this raw opening (0-100) instead of running the control loops.
+    bool valveTestActive();
+    bool valveTestHelium() { return vt_helium; }
+    float valveTestOpening() { return vt_opening; }
+
 private:
     OxygenSensor* sensors;
     ValveController* valve_ctrl;
@@ -63,6 +71,20 @@ private:
     lv_obj_t* screen_blender;
     lv_obj_t* screen_network;
     lv_obj_t* screen_pcal;      // pressure calibration
+    lv_obj_t* screen_valvetest = nullptr;
+
+    // Valve test page.
+    lv_obj_t* vt_gas = nullptr;
+    lv_obj_t* vt_slider = nullptr;
+    lv_obj_t* vt_value = nullptr;
+    lv_obj_t* vt_readings = nullptr;
+    lv_obj_t* vt_starts = nullptr;
+    lv_obj_t* vt_status = nullptr;
+    lv_obj_t* vt_learned = nullptr;
+    bool o2_over_target = false;
+    bool vt_helium = false;
+    float vt_opening = 0.0f;
+    uint32_t vt_touched_ms = 0;
 
     // Pressure calibration page, indexed by PressureChannel.
     lv_obj_t* pcal_now[2];      // live reading
@@ -152,6 +174,9 @@ private:
     void createBlenderScreen();
     void createNetworkScreen();
     void createPressureCalScreen();
+    void createValveTestScreen();
+    void updateValveTestScreen();
+    void setValveTestOpening(float opening);
     void updatePressureCalScreen();
     void refreshPressureCalStatus();
     void showPressureCalResult(const char* action, PressureCalResult r, float volts);
@@ -208,6 +233,15 @@ private:
     static void menu_blender_handler(lv_event_t* e);
     static void menu_network_handler(lv_event_t* e);
     static void menu_pcal_handler(lv_event_t* e);
+    static void menu_valvetest_handler(lv_event_t* e);
+    static void valvetest_back_handler(lv_event_t* e);
+    static void valvetest_gas_handler(lv_event_t* e);
+    static void valvetest_slider_handler(lv_event_t* e);
+    static void valvetest_step_handler(lv_event_t* e);
+    static void valvetest_close_handler(lv_event_t* e);
+    static void valvetest_save_handler(lv_event_t* e);
+    static void valvetest_forget_handler(lv_event_t* e);
+    static void learning_handler(lv_event_t* e);
     static void pcal_zero_handler(lv_event_t* e);
     static void pcal_span_handler(lv_event_t* e);
     static void pcal_reset_handler(lv_event_t* e);

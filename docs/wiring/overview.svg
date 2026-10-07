@@ -60,7 +60,7 @@
         <text class="t" x="568" y="49" style="fill:var(--w5)">+5 V → transducer excitation</text>
 
         <!-- 12 V valve rail -->
-        <text class="t" x="342" y="766" style="fill:var(--w10)">+12 V valve rail · duty capped at 69%</text>
+        <text class="t" x="342" y="766" style="fill:var(--w10)">+12 V valve rail · duty capped at 80%</text>
 
         <!-- Board -->
         <rect class="board" x="430" y="200" width="300" height="380" rx="8"/>

@@ -135,7 +135,7 @@ td:nth-child(2),td:nth-child(3){font-family:"IBM Plex Mono",monospace;white-spac
         <text class="t" x="568" y="49" style="fill:var(--w5)">+5 V → transducer excitation</text>
 
         <!-- 12 V valve rail -->
-        <text class="t" x="342" y="766" style="fill:var(--w10)">+12 V valve rail · duty capped at 69%</text>
+        <text class="t" x="342" y="766" style="fill:var(--w10)">+12 V valve rail · duty capped at 80%</text>
 
         <!-- Board -->
         <rect class="board" x="430" y="200" width="300" height="380" rx="8"/>
@@ -288,19 +288,19 @@ td:nth-child(2),td:nth-child(3){font-family:"IBM Plex Mono",monospace;white-spac
     <h2>Panel jacks</h2>
     <div class="scroll">
     <table>
-      <thead><tr><th>Jack (3.5 mm, TRS plug)</th><th>Tip (pin 2)</th><th>Ring (pin 3)</th><th>Sleeve (pin 4)</th></tr></thead>
+      <thead><tr><th>Jack</th><th>Tip (pin 2)</th><th>Ring (pin 3)</th><th>Sleeve (pin 4)</th></tr></thead>
       <tbody>
-        <tr><td>O2 cell, after He</td><td>ADS1115 A0, direct</td><td>&ndash;</td><td>Quiet ground (ADS1115 GND)</td></tr>
-        <tr><td>O2 cell, final mix</td><td>ADS1115 A1, direct</td><td>&ndash;</td><td>Quiet ground</td></tr>
-        <tr><td>Bank transducer</td><td>+5 V from the buck</td><td>Divider 10k end; divider out to A2</td><td>Quiet ground</td></tr>
-        <tr><td>Fill transducer</td><td>+5 V from the buck</td><td>Divider 10k end; divider out to A3</td><td>Quiet ground</td></tr>
-        <tr><td>He valve</td><td>He board + (12 V)</td><td>&ndash;</td><td>He board LOAD</td></tr>
-        <tr><td>O2 valve</td><td>O2 board + (12 V)</td><td>&ndash;</td><td>O2 board LOAD</td></tr>
-        <tr><td>Compressor sense</td><td>IO12 (P2)</td><td>Quiet ground</td><td>&ndash;</td></tr>
+        <tr><td>O2 cell, after He (3.5 mm)</td><td>&ndash;</td><td>ADS1115 A0, direct</td><td>Quiet ground (ADS1115 GND)</td></tr>
+        <tr><td>O2 cell, final mix (3.5 mm)</td><td>&ndash;</td><td>ADS1115 A1, direct</td><td>Quiet ground</td></tr>
+        <tr><td>Bank transducer (3.5 mm)</td><td>+5 V from the buck</td><td>Divider 10k end; divider out to A2</td><td>Quiet ground</td></tr>
+        <tr><td>Fill transducer (3.5 mm)</td><td>+5 V from the buck</td><td>Divider 10k end; divider out to A3</td><td>Quiet ground</td></tr>
+        <tr><td>He valve (3.5 mm)</td><td>He board + (12 V)</td><td>He board LOAD</td><td><b>Not connected</b></td></tr>
+        <tr><td>O2 valve (3.5 mm)</td><td>O2 board + (12 V)</td><td>O2 board LOAD</td><td><b>Not connected</b></td></tr>
+        <tr><td>Compressor sense (<b>2.5 mm</b>)</td><td>&ndash;</td><td>IO12 (P2)</td><td>Quiet ground</td></tr>
       </tbody>
     </table>
     </div>
-    <div class="warn">Pin 1 is unused. Every supply sits on the tip (+12 V on the valves, +5 V on the transducers), so plugging in with the power on can't short a supply, and a valve plug's barrel touching ground can't either. The jacks are identical, so label and colour-code them: a valve plugged into a transducer jack sits half open on 5 V with no command, and a sensor plugged into a valve jack gets 12 V. A compressor plug with tip and ring joined fakes "compressor running" and defeats the valve interlock: bench tests only, labelled TEST ONLY.</div>
+    <div class="warn">Tip = supply, ring = signal, sleeve = ground, on every jack; pin 1 unused. Supplies on the tip make hot-plugging safe, and a plug in the wrong 3.5 mm jack does almost no harm: a valve in a transducer jack stays shut, and an O2 cell in a valve jack has no circuit because the valve jack's sleeve is left unconnected. Avoid a transducer in a valve jack: its supply pin sees 12 V, with a return through its output pin whenever that valve is driven. The compressor sense uses a 2.5 mm jack so no other plug can fake "compressor running". A 2.5 mm plug with ring and sleeve joined does fake it on purpose: bench tests only, labelled TEST ONLY.</div>
   </section>
 
   <section>
@@ -371,7 +371,7 @@ td:nth-child(2),td:nth-child(3){font-family:"IBM Plex Mono",monospace;white-spac
         <text class="ts" x="32" y="381" style="fill:var(--warn-ink)">the board's ground this way. No extra series resistor needed.</text>
       </svg>
       </div>
-      <figcaption><b>Fig. 2.</b> Each valve is driven by an optoisolated D4184 breakout (power terminals + / LOAD / −, input header PWM / GND) switching the coil's low side. The input side is isolated: its GND is the opto LED's return and goes to the ESP32 board's ground (P5's GND pin, so the pulsed LED current doesn't share the ADS1115's ground wire on P4). The board has its own 1k input resistor, so the GPIO goes straight to PWM. The 1k pull-down from PWM to GND is mandatory on the helium pin: the board's 10k pull-up would otherwise light the opto through reset and flashing, so the valve could open before the firmware starts. The opto drives the gate to about half the supply (~6 V from 12 V). The board has no flyback diode: fit one across + and LOAD at the board, and take the valve's + lead from the same + terminal, so the PWM switching current stays on the board and the valve wires carry a near-steady current. The coil sits on the 12 V supply, so the firmware caps the duty at 69% to keep this 10 V coil within its 1.8 W rating.</figcaption>
+      <figcaption><b>Fig. 2.</b> Each valve is driven by an optoisolated D4184 breakout (power terminals + / LOAD / −, input header PWM / GND) switching the coil's low side. The input side is isolated: its GND is the opto LED's return and goes to the ESP32 board's ground (P5's GND pin, so the pulsed LED current doesn't share the ADS1115's ground wire on P4). The board has its own 1k input resistor, so the GPIO goes straight to PWM. The 1k pull-down from PWM to GND is mandatory on the helium pin: the board's 10k pull-up would otherwise light the opto through reset and flashing, so the valve could open before the firmware starts. The opto drives the gate to about half the supply (~6 V from 12 V). The board has no flyback diode: fit one across + and LOAD at the board, and take the valve's + lead from the same + terminal, so the PWM switching current stays on the board and the valve wires carry a near-steady current. The coil sits on the 12 V supply, so the firmware caps the duty at 80% (9.6 V average) to keep this 10 V coil within its 1.8 W rating.</figcaption>
     </figure>
   </section>
 
@@ -443,7 +443,7 @@ td:nth-child(2),td:nth-child(3){font-family:"IBM Plex Mono",monospace;white-spac
     <div class="warn">With the 12 V supply <b>off</b> and the board powered from USB, flash it and confirm each valve board's PWM pin stays below 0.5 V throughout. That proves the pull-downs are holding the valves shut through reset and flashing.</div>
     <ul class="checks">
       <li>Fit the flyback diode on both valves; without it the turn-off spike eventually kills the MOSFET.</li>
-      <li>Use a <b>regulated</b> 12 V supply and measure it under load. The firmware caps valve drive at 69% (<code>VALVE_MAX_DUTY</code>) so the 10 V coils stay within 1.8 W; a supply above 12 V overdrives them.</li>
+      <li>Use a <b>regulated</b> 12 V supply and measure it under load. The firmware caps valve drive at 80% (<code>VALVE_MAX_DUTY</code>, 9.6 V average) so the 10 V coils stay within 1.8 W; a supply above 12 V overdrives them.</li>
       <li>Set the O2 and He regulators below the valves' 100 psig rating.</li>
       <li>Keep the SD slot empty: GPIO 11 and 12 are its data and clock lines.</li>
       <li>Clamp the current switch around one conductor only; around the whole cable the currents cancel. Work on the mains side belongs with someone qualified.</li>

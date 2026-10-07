@@ -1,0 +1,228 @@
+<title>Auto Mixer Live Demo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Manrope:wght@400;500;600&display=swap">
+<style>
+/* One deliberate look: deep water around a black instrument screen. */
+:root{
+  color-scheme: dark;
+  --page:#07101C; --panel:#0E1A2B; --panel-2:#12223A; --line:#1E3350;
+  --ink:#E4EDF6; --muted:#8EA2B8; --accent:#35B6C4; --accent-ink:#04222A;
+  --warn:#FF8A5C;
+  
+  --d-o2:#2BE82B; --d-he:#2E7BFF; --d-btn:#7A85C6; --d-btn-act:#9AA4DC; --d-btn-text:#F2F4FF;
+  --d-label:#E8ECF2; --d-status-bg:#4A2740; --d-status:#FF5566; --d-brand:#3D63FF;
+  --d-banner:#121829; --d-pick-bg:#0E1426; --d-dim:#7C869C; --d-estop:#D32F2F; --d-estop-latched:#7A1A1A;
+  --d-btn-text-act:#1B2A8C; --d-primary:#2196F3;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);font:15px/1.55 Manrope,system-ui,sans-serif;padding-inline:16px;padding-block:24px 48px}
+.wrap{max-width:1200px;margin:0 auto;display:grid;gap:22px}
+header h1{font:800 clamp(28px,4vw,40px)/1.1 Archivo,system-ui,sans-serif;margin:0;letter-spacing:-.01em;text-wrap:balance}
+header p{margin:8px 0 0;max-width:66ch;color:var(--muted)}
+.tag{display:inline-flex;align-items:center;gap:8px;font:600 12px Manrope,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);padding:4px 10px;border-radius:999px;margin-bottom:12px}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:22px;align-items:start}
+@media (max-width:1000px){.layout{grid-template-columns:1fr}}
+.side{display:grid;gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.card h2{font:600 13px Manrope,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+.try{margin:0;padding-left:20px;display:grid;gap:6px}
+.try li::marker{color:var(--accent)}
+.controls{display:flex;flex-wrap:wrap;gap:10px}
+.pbtn{font:600 14px Manrope,sans-serif;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);padding:10px 14px;cursor:pointer}
+.pbtn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.pbtn:focus-visible,.chip:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.hint{font-size:13px;color:var(--muted);margin:8px 0 0}
+
+/* feedback */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{font:500 13px Manrope,sans-serif;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:999px;padding:7px 12px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.q{display:grid;gap:8px;margin-bottom:14px}
+.q label,.q .ql{font-weight:600;font-size:14px}
+textarea{width:100%;min-height:74px;border-radius:8px;border:1px solid var(--line);background:#0A1422;color:var(--ink);font:14px Manrope,sans-serif;padding:10px;resize:vertical}
+#fb-out{min-height:130px;font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+.feedback-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:760px){.feedback-grid{grid-template-columns:1fr}}
+footer{color:var(--muted);font-size:13px;max-width:80ch}
+/* device */
+.bezel{background:#151A22;border-radius:18px;padding:clamp(8px,1.6vw,18px);box-shadow:0 20px 50px rgba(0,0,0,.45), inset 0 0 0 1px #262D38}
+.viewport{position:relative;width:100%;aspect-ratio:800/480;overflow:hidden;border-radius:4px;background:#000}
+#lcd{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:pointer;image-rendering:auto}
+.booting{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font:500 14px Manrope,sans-serif}
+.booting[hidden]{display:none}
+.rotate{display:none;font-size:13px;color:var(--muted);margin-top:8px;text-align:center}
+@media (max-width:600px) and (orientation:portrait){.rotate{display:block}}
+
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="tag">Real firmware · simulated gas · not connected to anything</span>
+    <h1>Try the Auto Mixer</h1>
+    <p>This is the real touchscreen software from a nitrox and trimix blending controller we're building for fill stations, running in your browser with simulated gas. Spin the wheels, start the compressor, poke every button, then tell us what you'd change.</p>
+  </header>
+
+  <div class="layout">
+    <div>
+      <div class="bezel">
+        <div class="viewport">
+          <canvas id="lcd" width="800" height="480" aria-label="Auto Mixer touchscreen, running the real firmware"></canvas>
+          <div class="booting" id="booting">Starting the Auto Mixer…</div>
+        </div>
+      </div>
+      <p class="rotate">Turn your phone sideways for a bigger screen.</p>
+    </div>
+
+    <aside class="side">
+      <div class="card">
+        <h2>Demo controls</h2>
+        <div class="controls">
+          <button class="pbtn primary" id="comp-btn" type="button">Start compressor</button>
+          <button class="pbtn" id="reset-btn" type="button">Restart</button>
+        </div>
+        <p class="hint">On the real unit a sensor on the compressor does this. The valves only open while it's running.</p>
+      </div>
+      <div class="card">
+        <h2>Things to try</h2>
+        <ul class="try">
+          <li>Spin the green Oxygen wheel to 32, then start the compressor and watch the mix settle.</li>
+          <li>Tap <b>Presets</b> and pick a trimix like 18/45.</li>
+          <li>Hit <b>EMERGENCY STOP</b>, then tap it again to resume.</li>
+          <li><b>Setup → Blender Setup</b>: switch to Nitrox only, or BAR.</li>
+          <li>Run <b>Calibrate</b>, and try <b>Setup → Pressure Calibration</b>.</li>
+        </ul>
+      </div>
+    </aside>
+  </div>
+
+  <section class="card" aria-labelledby="fb-h">
+    <h2 id="fb-h">Tell us what you think</h2>
+    <div class="feedback-grid">
+      <div>
+        <div class="q"><span class="ql">You are a…</span>
+          <div class="chips" data-group="role" data-single="1">
+            <button type="button" class="chip" aria-pressed="false">Fill station operator</button>
+            <button type="button" class="chip" aria-pressed="false">Dive shop owner</button>
+            <button type="button" class="chip" aria-pressed="false">Tech / trimix diver</button>
+            <button type="button" class="chip" aria-pressed="false">Recreational diver</button>
+            <button type="button" class="chip" aria-pressed="false">Just curious</button>
+          </div>
+        </div>
+        <div class="q"><span class="ql">Which features matter most to you?</span>
+          <div class="chips" data-group="features">
+            <button type="button" class="chip" aria-pressed="false">Trimix blending</button>
+            <button type="button" class="chip" aria-pressed="false">Nitrox-only mode</button>
+            <button type="button" class="chip" aria-pressed="false">Presets</button>
+            <button type="button" class="chip" aria-pressed="false">Watch from my phone</button>
+            <button type="button" class="chip" aria-pressed="false">Bank &amp; fill pressure</button>
+            <button type="button" class="chip" aria-pressed="false">Emergency stop</button>
+            <button type="button" class="chip" aria-pressed="false">PSI / BAR</button>
+            <button type="button" class="chip" aria-pressed="false">Fill logging</button>
+          </div>
+        </div>
+        <div class="q"><span class="ql">Would you use one?</span>
+          <div class="chips" data-group="use" data-single="1">
+            <button type="button" class="chip" aria-pressed="false">Yes</button>
+            <button type="button" class="chip" aria-pressed="false">Maybe</button>
+            <button type="button" class="chip" aria-pressed="false">No</button>
+          </div>
+        </div>
+        <div class="q">
+          <label for="fb-missing">What's missing, confusing, or what would you change?</label>
+          <textarea id="fb-missing" placeholder="e.g. show the fill's target pressure, log each fill, bigger numbers…"></textarea>
+        </div>
+      </div>
+      <div>
+        <div class="q">
+          <label for="fb-out">Your answers, ready to paste into the Facebook comments</label>
+          <textarea id="fb-out" readonly></textarea>
+          <div class="controls">
+            <button class="pbtn primary" id="fb-copy" type="button">Copy my answers</button>
+          </div>
+          <p class="hint" id="fb-copied" aria-live="polite">Copy, then paste it as a comment on the post you came from.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>Demo only. This runs the unit's actual screen code; the oxygen cells, pressure sensors and valves are simulated in your browser, and nothing is stored or sent anywhere. This is not blending guidance. Always analyse your gas.</footer>
+</div>
+
+
+<script>
+/*SIM_JS*/
+</script>
+<script>
+(() => {
+  const $ = (s, c = document) => c.querySelector(s);
+  const canvas = $('#lcd'), ctx = canvas.getContext('2d');
+  const frame = ctx.createImageData(800, 480);
+  const rgba = new Uint32Array(frame.data.buffer);
+  // RGB565 -> RGBA (little-endian: 0xAABBGGRR), via a 64K lookup table.
+  const lut = new Uint32Array(65536);
+  for (let c = 0; c < 65536; c++) {
+    const r = (c >> 11) & 31, g = (c >> 5) & 63, b = c & 31;
+    lut[c] = 0xFF000000 | (((b << 3) | (b >> 2)) << 16) | (((g << 2) | (g >> 4)) << 8) | ((r << 3) | (r >> 2));
+  }
+  let firstFrame = true;
+  // Called by the firmware's display flush (sim/src/sim_display.cpp).
+  globalThis.simBlit = (heap, off, x, y, w, h) => {
+    for (let row = 0; row < h; row++) {
+      const src = off + row * w, dst = (y + row) * 800 + x;
+      for (let col = 0; col < w; col++) rgba[dst + col] = lut[heap[src + col]];
+    }
+    ctx.putImageData(frame, 0, 0, x, y, w, h);
+    if (firstFrame) { firstFrame = false; $('#booting').hidden = true; }
+  };
+
+  const compBtn = $('#comp-btn');
+  createAutoMixerSim({ print: () => {}, printErr: () => {} }).then(sim => {
+    // Touch: the firmware sees one finger at 800x480 screen coordinates, like the GT911.
+    const at = e => {
+      const r = canvas.getBoundingClientRect();
+      return [Math.round((e.clientX - r.left) / r.width * 800), Math.round((e.clientY - r.top) / r.height * 480)];
+    };
+    let down = false;
+    canvas.addEventListener('pointerdown', e => { down = true; canvas.setPointerCapture(e.pointerId); sim._sim_pointer(...at(e), 1); });
+    canvas.addEventListener('pointermove', e => { if (down) sim._sim_pointer(...at(e), 1); });
+    const up = e => { if (!down) return; down = false; sim._sim_pointer(...at(e), 0); };
+    canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
+
+    const label = () => { compBtn.textContent = sim._sim_compressor() ? 'Stop compressor' : 'Start compressor'; };
+    compBtn.addEventListener('click', () => { sim._sim_set_compressor(sim._sim_compressor() ? 0 : 1); label(); });
+    label();
+  }).catch(() => { $('#booting').textContent = 'The demo could not start in this browser.'; });
+  $('#reset-btn').addEventListener('click', () => { try { location.reload(); } catch (e) {} });
+
+  // ---------- feedback: composed here, pasted into the Facebook comments ----------
+  const out = $('#fb-out');
+  function compose() {
+    const pick = g => [...document.querySelectorAll(`[data-group="${g}"] .chip[aria-pressed="true"]`)].map(c => c.textContent);
+    const lines = ['Auto Mixer demo feedback'];
+    const role = pick('role'), feats = pick('features'), use = pick('use'), missing = $('#fb-missing').value.trim();
+    if (role.length) lines.push('I am: ' + role.join(', '));
+    if (feats.length) lines.push('Most useful: ' + feats.join(', '));
+    if (use.length) lines.push('Would I use one: ' + use.join(', '));
+    if (missing) lines.push('Ideas / changes: ' + missing);
+    out.value = lines.length > 1 ? lines.join('\n') : '';
+    out.placeholder = 'Pick a few answers on the left and they appear here.';
+  }
+  document.querySelectorAll('.chips').forEach(group => {
+    group.addEventListener('click', e => {
+      const c = e.target.closest('.chip'); if (!c) return;
+      const on = c.getAttribute('aria-pressed') !== 'true';
+      if (group.dataset.single) group.querySelectorAll('.chip').forEach(x => x.setAttribute('aria-pressed', 'false'));
+      c.setAttribute('aria-pressed', String(on));
+      compose();
+    });
+  });
+  $('#fb-missing').addEventListener('input', compose);
+  compose();
+  $('#fb-copy').addEventListener('click', () => {
+    const msg = $('#fb-copied');
+    if (!out.value) { msg.textContent = 'Pick a few answers first.'; return; }
+    navigator.clipboard.writeText(out.value).then(
+      () => { msg.textContent = 'Copied. Paste it as a comment on the Facebook post.'; },
+      () => { out.select(); msg.textContent = 'Selected. Copy it with your device, then paste it as a comment on the post.'; });
+  });
+})();
+</script>
