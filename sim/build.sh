@@ -23,7 +23,7 @@ if [ ! -f "$OUT/liblvgl.a" ] || [ include/lv_conf.h -nt "$OUT/liblvgl.a" ]; then
 fi
 
 echo "Compiling firmware and simulator..."
-FIRMWARE="src/main.cpp src/gui.cpp src/sensors.cpp src/valve_control.cpp"
+FIRMWARE="src/main.cpp src/gui.cpp src/sensors.cpp src/valve_control.cpp src/maintenance.cpp"
 SIM="sim/src/sim_platform.cpp sim/src/sim_world.cpp sim/src/sim_display.cpp sim/src/sim_network.cpp sim/src/sim_main.cpp"
 
 # No WebAssembly: plain JavaScript, so it also runs where a page's security policy

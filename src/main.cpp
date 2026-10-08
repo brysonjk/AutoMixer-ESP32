@@ -6,12 +6,14 @@
 #include "wifi_manager.h"
 #include "gui.h"
 #include "web_dashboard.h"
+#include "maintenance.h"
 #include <esp_system.h>
 #include <Preferences.h>
 
 static OxygenSensor sensors;
 static ValveController valves;
 static WifiManager wifi;
+static Maintenance maintenance;
 static FillStationGUI* gui = nullptr;
 static WebDashboard* web = nullptr;
 
@@ -273,7 +275,7 @@ static void updateBlendControl() {
     // whenever the compressor isn't running, since with no air drawn through there is
     // nothing to blend into and injected gas would pool at the intake.
     if (!sensors.isAvailable() || sensors.calibrating() || !sensors.isCalibrated() ||
-        gui->emergencyStopped() || !compressor_running) {
+        gui->emergencyStopped() || !compressor_running || gui->fillMode()) {
         closeValvesAndReset();
         return;
     }
@@ -352,12 +354,14 @@ void setup() {
 
     sensors.begin();
     valves.begin();
+    maintenance.begin();
     Serial.printf("feedforward O2 %.0f, He %.0f per unit demand, learning %s\n",
                   valves.learnedGain(false), valves.learnedGain(true),
                   valves.learningLocked() ? "locked" : "automatic");
     wifi.begin();
 
     gui = new FillStationGUI(&sensors, &valves, &wifi);
+    gui->setMaintenance(&maintenance);
     gui->init();
 
     web = new WebDashboard(&sensors, &valves, gui);
@@ -400,6 +404,7 @@ void loop() {
     if (web) web->loop();
     sensors.calibrationTick();
     updateCompressor();
+    maintenance.tick(compressor_running);
 
     static uint32_t last_sensor = 0;
     if (now - last_sensor >= SENSOR_INTERVAL_MS) {

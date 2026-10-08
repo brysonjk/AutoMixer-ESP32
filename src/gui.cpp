@@ -232,6 +232,7 @@ void FillStationGUI::init() {
     loadRemotePin();
     loadPresets();
     loadBlenderSettings();
+    loadFillSettings();
 
     screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, COLOR_BG, 0);
@@ -251,6 +252,9 @@ void FillStationGUI::init() {
     createNetworkScreen();
     createPressureCalScreen();
     createValveTestScreen();
+    createMaintenanceScreen();
+    createFillPanel();
+    createCylinderScreen();
 
     createEmergencyStop();
     applyBlenderSettings();
@@ -340,12 +344,13 @@ void FillStationGUI::createSetupMenu() {
          menu_pcal_handler},
         {"Valve Test", "Find where each valve starts to flow",
          menu_valvetest_handler},
+        {"Maintenance", "Compressor hours, filter and oil reminders", menu_maint_handler},
     };
-    // Four rows, kept clear of the E-STOP along the bottom.
-    for (int i = 0; i < 4; i++) {
+    // A 2 x 3 grid of tiles, kept clear of the E-STOP along the bottom.
+    for (int i = 0; i < 5; i++) {
         lv_obj_t* btn = lv_btn_create(screen_menu);
-        lv_obj_set_size(btn, 460, 78);
-        lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 56 + i * 88);
+        lv_obj_set_size(btn, 372, 100);
+        lv_obj_set_pos(btn, 20 + (i % 2) * 388, 60 + (i / 2) * 116);
         lv_obj_set_style_bg_color(btn, COLOR_PICKER_BG, 0);
         lv_obj_set_style_border_width(btn, 1, 0);
         lv_obj_set_style_border_color(btn, COLOR_BTN, 0);
@@ -355,10 +360,12 @@ void FillStationGUI::createSetupMenu() {
 
         lv_obj_set_style_pad_all(btn, 0, 0);
         lv_obj_t* t = make_label(btn, items[i].title, &lv_font_montserrat_24, COLOR_LABEL, 0, 0);
-        lv_obj_align(t, LV_ALIGN_TOP_LEFT, 14, 10);
+        lv_obj_align(t, LV_ALIGN_TOP_LEFT, 14, 14);
         lv_obj_t* n = make_label(btn, items[i].note, &lv_font_montserrat_16, COLOR_PICKER_DIM,
                                  0, 0);
-        lv_obj_align(n, LV_ALIGN_TOP_LEFT, 14, 46);
+        lv_obj_align(n, LV_ALIGN_TOP_LEFT, 14, 56);
+        lv_obj_set_width(n, 320);
+        lv_label_set_long_mode(n, LV_LABEL_LONG_WRAP);
         lv_obj_t* arrow = make_label(btn, LV_SYMBOL_RIGHT, &lv_font_montserrat_24, COLOR_BTN, 0, 0);
         lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -8, 0);
     }
@@ -379,7 +386,7 @@ void FillStationGUI::createBlenderScreen() {
 
     struct Row { const char* title; const char* note; };
     const Row rows[] = {
-        {"Pressure units", "Bank and fill readings"},
+        {"Pressure units", "Bank and fill readings, and their rate per minute"},
         {"Gas mode", "Nitrox only hides helium and ignores sensor S1"},
         {"Pressure sensors", "Bank and fill transducers"},
         {"Valve learning", "Auto keeps learning each valve's holding opening"},
@@ -434,22 +441,10 @@ void FillStationGUI::saveBlenderSettings() {
 // Brings the main screen, sensors and layout in line with the Blender Setup choices.
 void FillStationGUI::applyBlenderSettings() {
     sensors->setHeliumCellUsed(helium_enabled);
-    if (helium_enabled) {
-        lv_obj_clear_flag(col_he, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        // Nitrox only: no helium may be asked for, whatever a preset or the web page says.
-        setHeliumTarget(0);
-        lv_obj_add_flag(col_he, LV_OBJ_FLAG_HIDDEN);
-    }
-
-    // Hide the whole column, not just its readouts, so applyLayout() re-centres the rest
-    // instead of keeping an empty slot on the right.
-    if (transducers_fitted) lv_obj_clear_flag(col_p, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(col_p, LV_OBJ_FLAG_HIDDEN);
+    // Nitrox only: no helium may be asked for, whatever a preset or the web page says.
+    if (!helium_enabled) setHeliumTarget(0);
     lv_label_set_text(label_bank_unit, units_bar ? "BAR" : "PSI");
-    lv_label_set_text(label_fill_unit, units_bar ? "BAR" : "PSI");
-
-    applyLayout();
+    applyMode();
     Serial.printf("blender: %s, %s, pressure sensors %s\n", helium_enabled ? "trimix" : "nitrox only",
                   units_bar ? "BAR" : "PSI", transducers_fitted ? "fitted" : "none");
 }
@@ -480,6 +475,10 @@ void FillStationGUI::applyLayout() {
     lv_obj_set_pos(btn_calibrate, bottom_margin_x, ESTOP_Y);
     lv_obj_set_pos(btn_presets, SCREEN_WIDTH - bottom_margin_x - BOTTOM_BTN_W, ESTOP_Y);
     lv_obj_set_pos(status_panel, bottom_margin_x, STATUS_Y);
+    if (fill_panel) {
+        lv_obj_set_pos(fill_panel, bottom_margin_x, 72);
+        lv_obj_set_width(fill_panel, SCREEN_WIDTH - 2 * bottom_margin_x);
+    }
     lv_obj_set_width(status_panel, SCREEN_WIDTH - 2 * bottom_margin_x);
     if (estop_btn) {
         lv_obj_set_pos(estop_btn, estopX(), ESTOP_Y);
@@ -1067,8 +1066,23 @@ void FillStationGUI::createBanner() {
     // Shown whenever remote control is armed, so anyone at the station can see it.
     label_remote_badge = make_label(banner, "REMOTE", &lv_font_montserrat_16, COLOR_REMOTE,
                                     0, 0);
-    lv_obj_align(label_remote_badge, LV_ALIGN_RIGHT_MID, -134, 0);
+    lv_obj_align(label_remote_badge, LV_ALIGN_RIGHT_MID, -266, 0);
     lv_obj_add_flag(label_remote_badge, LV_OBJ_FLAG_HIDDEN);
+
+    // Mode: opens a choice of Blending or Filling. Hidden when no pressure sensors are
+    // fitted (see applyMode()).
+    btn_mode = lv_btn_create(banner);
+    lv_obj_set_size(btn_mode, 120, 34);
+    lv_obj_align(btn_mode, LV_ALIGN_RIGHT_MID, -134, 0);
+    lv_obj_set_style_bg_color(btn_mode, COLOR_BTN_ACTIVE, 0);
+    lv_obj_set_style_radius(btn_mode, 3, 0);
+    lv_obj_set_style_shadow_width(btn_mode, 0, 0);
+    lv_obj_add_event_cb(btn_mode, mode_btn_handler, LV_EVENT_CLICKED, this);
+    label_mode = lv_label_create(btn_mode);
+    lv_obj_set_style_text_font(label_mode, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(label_mode, COLOR_BTN_TEXT_AC, 0);
+    lv_label_set_text(label_mode, "Mode");
+    lv_obj_center(label_mode);
 
     lv_obj_t* setup = lv_btn_create(banner);
     lv_obj_set_size(setup, 110, 34);
@@ -1147,6 +1161,11 @@ void FillStationGUI::updateStatusPanel() {
         tone = TONE_RED;
         strlcpy(headline, "EMERGENCY STOP", sizeof(headline));
         strlcpy(detail, "Valves closed. Tap the red button to resume.", sizeof(detail));
+    } else if (fillMode()) {
+        tone = TONE_GREY;
+        strlcpy(headline, "Filling mode", sizeof(headline));
+        strlcpy(detail, "Blending is off and both valves stay shut. Mode switches back to Blending.",
+                sizeof(detail));
     } else if (!sensors->isAvailable()) {
         tone = TONE_RED;
         strlcpy(headline, "Sensor fault", sizeof(headline));
@@ -1166,6 +1185,16 @@ void FillStationGUI::updateStatusPanel() {
         tone = TONE_RED;
         strlcpy(headline, "Cell fault", sizeof(headline));
         strlcpy(detail, "An O2 cell reads out of range. Valves held closed.", sizeof(detail));
+    } else if (!compressor_running && maint && (maint->due(MAINT_FILTER) || maint->due(MAINT_OIL))) {
+        // A reminder only: blending is still allowed. Shown while stopped, so it never
+        // hides what a running blend is doing.
+        tone = TONE_AMBER;
+        const bool f = maint->due(MAINT_FILTER), o = maint->due(MAINT_OIL);
+        strlcpy(headline, f && o ? "Filter and oil due" : f ? "Filter change due" : "Oil change due",
+                sizeof(headline));
+        const MaintCounter c = f ? MAINT_FILTER : MAINT_OIL;
+        snprintf(detail, sizeof(detail), "%s: %.1f h of %u h. Reset it on Setup > Maintenance when done.",
+                 Maintenance::name(c), maint->hours(c), maint->limitHours(c));
     } else if (!compressor_running) {
         tone = TONE_GREY;
         strlcpy(headline, "Ready", sizeof(headline));
@@ -1266,8 +1295,26 @@ static lv_obj_t* make_pressure_readout(lv_obj_t* col, const char* title, lv_coor
 void FillStationGUI::createPressurePanel() {
     col_p = make_column(screen, COLUMN_P_W);
     make_pressure_readout(col_p, "Bank", 88, 88, &label_bank_psi, &label_bank_unit);
-    make_pressure_readout(col_p, "Fill", TARGET_ROW_Y, TARGET_ROW_H, &label_fill_psi,
-                          &label_fill_unit);
+    // Blending mode: the bank's size, where the Fill readout was, so the bank's pressure rise
+    // can be read as a flow. Filling mode has its own panel (createFillPanel()).
+    btn_bank = lv_btn_create(col_p);
+    lv_obj_set_size(btn_bank, COLUMN_P_W, TARGET_ROW_H);
+    lv_obj_set_pos(btn_bank, 0, TARGET_ROW_Y);
+    lv_obj_set_style_bg_color(btn_bank, COLOR_PICKER_BG, 0);
+    lv_obj_set_style_border_width(btn_bank, 1, 0);
+    lv_obj_set_style_border_color(btn_bank, COLOR_BTN, 0);
+    lv_obj_set_style_radius(btn_bank, 6, 0);
+    lv_obj_set_style_shadow_width(btn_bank, 0, 0);
+    lv_obj_set_style_pad_all(btn_bank, 0, 0);
+    lv_obj_add_event_cb(btn_bank, bank_btn_handler, LV_EVENT_CLICKED, this);
+    make_centered_label(btn_bank, "Bank size", &lv_font_montserrat_16, COLOR_BTN_ACTIVE,
+                        LV_ALIGN_TOP_MID, 8);
+    label_bank_size = make_centered_label(btn_bank, "", &lv_font_montserrat_24, COLOR_LABEL,
+                                          LV_ALIGN_BOTTOM_MID, -12);
+    label_bank_flow = make_label(col_p, "", &lv_font_montserrat_16, COLOR_PICKER_DIM, 0, 0);
+    lv_obj_set_width(label_bank_flow, COLUMN_P_W);
+    lv_obj_set_style_text_align(label_bank_flow, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(label_bank_flow, 0, TARGET_ROW_Y + TARGET_ROW_H + 4);
 
     // Calibrate and Presets sit in the bottom row beside the E-STOP (placed by
     // applyLayout()), so they stay even with no pressure sensors fitted.
@@ -1398,6 +1445,8 @@ void FillStationGUI::updateValveTestScreen() {
     if (estop_active) {
         snprintf(buf, sizeof(buf), "EMERGENCY STOP: valves held shut");
         color = COLOR_STATUS_TEXT;
+    } else if (fillMode()) {
+        snprintf(buf, sizeof(buf), "Filling mode: switch to Blending to test the valves");
     } else if (!sensors->isAvailable()) {
         snprintf(buf, sizeof(buf), "Sensor fault: valves held shut");
         color = COLOR_STATUS_TEXT;
@@ -1884,6 +1933,650 @@ void FillStationGUI::preset_defaults_handler(lv_event_t* e) {
 }
 
 // ---------------------------------------------------------------------------------
+// Maintenance: compressor hour meter, and filter / oil counters with reminder limits.
+
+static const char* const MAINT_TITLES[MAINT_COUNT] = {"Filter cartridge", "Oil change"};
+
+void FillStationGUI::createMaintenanceScreen() {
+    screen_maint = makeSubScreen("Maintenance", setup_close_handler);
+
+    make_label(screen_maint, "Compressor hours", &lv_font_montserrat_24, COLOR_LABEL, 24, 64);
+    make_label(screen_maint, "Total, never reset", &lv_font_montserrat_14, COLOR_PICKER_DIM, 24, 94);
+    mt_total = make_label(screen_maint, "", &lv_font_montserrat_28, COLOR_LABEL, 400, 66);
+
+    for (int i = 0; i < MAINT_COUNT; i++) {
+        const lv_coord_t y0 = 132 + i * 124;
+        make_label(screen_maint, MAINT_TITLES[i], &lv_font_montserrat_24, COLOR_BTN_ACTIVE, 24, y0);
+        mt_hours[i] = make_label(screen_maint, "", &lv_font_montserrat_20, COLOR_LABEL, 24, y0 + 34);
+        mt_state[i] = make_label(screen_maint, "", &lv_font_montserrat_16, COLOR_PICKER_DIM, 24, y0 + 64);
+
+        make_label(screen_maint, "Remind at", &lv_font_montserrat_14, COLOR_PICKER_DIM, 400, y0 + 4);
+        // Tap for 1 h, hold to run in 10 h steps.
+        lv_obj_t* btn = make_action_button(screen_maint, "-", 400, y0 + 26, 60, 50, COLOR_BTN);
+        lv_obj_set_style_text_font(lv_obj_get_child(btn, 0), &lv_font_montserrat_28, 0);
+        lv_obj_set_user_data(btn, (void*)(intptr_t)(i * 2));
+        lv_obj_add_event_cb(btn, maint_step_handler, LV_EVENT_ALL, this);
+        mt_limit[i] = make_label(screen_maint, "", &lv_font_montserrat_24, COLOR_LABEL, 0, 0);
+        lv_obj_set_width(mt_limit[i], 100);
+        lv_obj_set_style_text_align(mt_limit[i], LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(mt_limit[i], 464, y0 + 38);
+        btn = make_action_button(screen_maint, "+", 568, y0 + 26, 60, 50, COLOR_BTN);
+        lv_obj_set_style_text_font(lv_obj_get_child(btn, 0), &lv_font_montserrat_28, 0);
+        lv_obj_set_user_data(btn, (void*)(intptr_t)(i * 2 + 1));
+        lv_obj_add_event_cb(btn, maint_step_handler, LV_EVENT_ALL, this);
+
+        btn = make_action_button(screen_maint, "Reset", 652, y0 + 26, 124, 50, COLOR_STATUS_BG);
+        lv_obj_set_user_data(btn, (void*)(intptr_t)i);
+        lv_obj_add_event_cb(btn, maint_reset_handler, LV_EVENT_CLICKED, this);
+    }
+
+    make_label(screen_maint,
+               "Counts while the compressor runs. Set a reminder to 0 h to turn it off.\n"
+               "When one is due the status panel says so; reset the counter after the work.",
+               &lv_font_montserrat_14, COLOR_PICKER_DIM, 24, 382);
+}
+
+void FillStationGUI::updateMaintenanceScreen() {
+    if (!maint) return;
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%.1f h", maint->totalHours());
+    set_text_if_changed(mt_total, buf);
+    for (int i = 0; i < MAINT_COUNT; i++) {
+        const MaintCounter c = (MaintCounter)i;
+        snprintf(buf, sizeof(buf), "%.1f h since reset", maint->hours(c));
+        set_text_if_changed(mt_hours[i], buf);
+        const uint16_t lim = maint->limitHours(c);
+        if (lim == 0) snprintf(buf, sizeof(buf), "Off");
+        else snprintf(buf, sizeof(buf), "%u h", lim);
+        set_text_if_changed(mt_limit[i], buf);
+
+        lv_color_t color = COLOR_PICKER_DIM;
+        if (lim == 0) {
+            snprintf(buf, sizeof(buf), "No reminder set");
+        } else if (maint->due(c)) {
+            snprintf(buf, sizeof(buf), "Due now: %.1f h over", maint->hours(c) - lim);
+            color = COLOR_WARN;
+        } else {
+            snprintf(buf, sizeof(buf), "Due in %.1f h", lim - maint->hours(c));
+            color = COLOR_O2;
+        }
+        set_text_if_changed(mt_state[i], buf);
+        lv_obj_set_style_text_color(mt_state[i], color, 0);
+    }
+}
+
+void FillStationGUI::menu_maint_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    self->updateMaintenanceScreen();
+    lv_scr_load(self->screen_maint);
+}
+
+void FillStationGUI::maint_step_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    if (!self->maint) return;
+    const lv_event_code_t code = lv_event_get_code(e);
+    const int id = (int)(intptr_t)lv_obj_get_user_data(lv_event_get_target(e));
+    const MaintCounter c = (MaintCounter)(id / 2);
+    const int dir = (id % 2) ? 1 : -1;
+    if (code == LV_EVENT_SHORT_CLICKED) {
+        self->maint->setLimitHours(c, self->maint->limitHours(c) + dir);
+    } else if (code == LV_EVENT_LONG_PRESSED_REPEAT) {
+        self->maint->setLimitHours(c, self->maint->limitHours(c) + dir * 10);
+    } else if (code == LV_EVENT_RELEASED) {
+        self->maint->save();
+    } else {
+        return;
+    }
+    self->updateMaintenanceScreen();
+}
+
+static const char* MAINT_RESET_BTNS[] = {"Reset", "Cancel", ""};
+
+void FillStationGUI::maint_reset_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    if (!self->maint) return;
+    self->mt_pending_reset = (uint8_t)(intptr_t)lv_obj_get_user_data(lv_event_get_target(e));
+    const MaintCounter c = (MaintCounter)self->mt_pending_reset;
+    char text[96];
+    snprintf(text, sizeof(text), "Set the %s counter (%.1f h) back to zero?",
+             MAINT_TITLES[c], self->maint->hours(c));
+    lv_obj_t* m = make_msgbox("Reset counter", text, MAINT_RESET_BTNS);
+    lv_obj_add_event_cb(m, maint_reset_confirm_handler, LV_EVENT_VALUE_CHANGED, self);
+}
+
+void FillStationGUI::maint_reset_confirm_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    lv_obj_t* m = lv_event_get_current_target(e);
+    if (lv_msgbox_get_active_btn(m) == 0 && self->maint) {
+        self->maint->reset((MaintCounter)self->mt_pending_reset);
+        self->updateMaintenanceScreen();
+    }
+    lv_msgbox_close_async(m);
+}
+
+// ---------------------------------------------------------------------------------
+// Pressure rate: how fast bank and fill pressure are changing,
+// per minute, from a straight-line fit over the last 30 s. A plain difference between two
+// readings would jump around with the transducers' few-PSI noise.
+
+void PressureTrend::add(float t_s, float psi) {
+    if (isnan(psi)) {
+        n = 0;
+        return;
+    }
+    t[head] = t_s;
+    v[head] = psi;
+    head = (head + 1) % SIZE;
+    if (n < SIZE) n++;
+}
+
+float PressureTrend::perMinute() const {
+    if (n < 10) return NAN;   // under 10 s of readings: not enough to call a trend
+    float st = 0, sv = 0, stt = 0, stv = 0;
+    for (int i = 0; i < n; i++) {
+        st += t[i];
+        sv += v[i];
+    }
+    const float mt = st / n, mv = sv / n;
+    for (int i = 0; i < n; i++) {
+        stt += (t[i] - mt) * (t[i] - mt);
+        stv += (t[i] - mt) * (v[i] - mv);
+    }
+    return stt > 0.0f ? stv / stt * 60.0f : NAN;
+}
+
+static void format_rate(char* buf, size_t len, const char* unit, float psi_per_min, bool bar) {
+    if (isnan(psi_per_min)) {
+        snprintf(buf, len, "%s  ...", unit);
+        return;
+    }
+    if (bar) {
+        const float r = roundf(psi_per_min / PSI_PER_BAR * 2.0f) / 2.0f;   // to 0.5 bar
+        if (fabsf(r) < 0.5f) snprintf(buf, len, "%s  steady", unit);
+        else snprintf(buf, len, fabsf(r) < 10.0f ? "%s  %+.1f/min" : "%s  %+.0f/min", unit, r);
+    } else {
+        const float r = roundf(psi_per_min / 5.0f) * 5.0f;                  // to 5 PSI
+        if (fabsf(r) < 10.0f) snprintf(buf, len, "%s  steady", unit);
+        else snprintf(buf, len, "%s  %+.0f/min", unit, r);
+    }
+}
+
+void FillStationGUI::updatePressureRates() {
+    const uint32_t now = millis();
+    if (now - rate_sample_ms >= 1000) {
+        rate_sample_ms = now;
+        bank_trend.add(now / 1000.0f, sensors->getBankPSI());
+        fill_trend.add(now / 1000.0f, sensors->getFillPSI());
+    }
+    const char* unit = units_bar ? "BAR" : "PSI";
+    char buf[32];
+    format_rate(buf, sizeof(buf), unit, bank_trend.perMinute(), units_bar);
+    set_text_if_changed(label_bank_unit, buf);
+    set_text_if_changed(fp_bank_rate, buf);
+    format_rate(buf, sizeof(buf), unit, fill_trend.perMinute(), units_bar);
+    set_text_if_changed(fp_fill_rate, buf);
+    updateFillReadouts();
+}
+
+// ---------------------------------------------------------------------------------
+// Blending / Filling mode, cylinder and bank sizes, flow and time to full.
+//
+// Flow is read from how fast a pressure rises in a known volume: free air in = volume x
+// pressure rise. Volumes come from how bottles are sold (rated volume at a working
+// pressure), so a 444 cu ft @ 4500 psi bottle holds 444/4500 cu ft of air per PSI. It's an
+// estimate: a cylinder warms as it fills, which reads a little high mid-fill.
+
+// One list per pressure unit (Blender Setup): PSI shops rate bottles in cu ft, BAR shops
+// in litres of water, and neither needs the other's sizes.
+static const CylinderSpec FILL_PRESETS_PSI[] = {
+    {"40", 40.0f, 3000.0f, false},     {"50", 50.0f, 2640.0f, false},
+    {"AL63", 63.0f, 3000.0f, false},   {"72", 72.0f, 3000.0f, false},
+    {"AL80", 77.4f, 3000.0f, false},   {"LP85", 85.0f, 2640.0f, false},
+    {"HP100", 100.0f, 3442.0f, false}, {"HP120", 120.0f, 3442.0f, false},
+    {"LP120", 120.0f, 2640.0f, false},
+};
+static const CylinderSpec FILL_PRESETS_BAR[] = {
+    {"3 L", 3.0f, 200.0f, true},      {"7 L", 7.0f, 232.0f, true},
+    {"10 L", 10.0f, 232.0f, true},    {"12 L", 12.0f, 232.0f, true},
+    {"12 L 300", 12.0f, 300.0f, true}, {"15 L", 15.0f, 232.0f, true},
+    {"Twin 12", 24.0f, 232.0f, true},
+};
+static const CylinderSpec BANK_PRESETS_PSI[] = {
+    {"444", 444.0f, 4500.0f, false},
+    {"300", 300.0f, 4500.0f, false},
+};
+static const CylinderSpec BANK_PRESETS_BAR[] = {
+    {"50 L", 50.0f, 300.0f, true},
+    {"50 L 200", 50.0f, 200.0f, true},
+    {"80 L", 80.0f, 300.0f, true},
+};
+#define COUNT_OF(a) (uint8_t)(sizeof(a) / sizeof((a)[0]))
+
+static const CylinderSpec* fill_presets(bool bar, uint8_t* n) {
+    *n = bar ? COUNT_OF(FILL_PRESETS_BAR) : COUNT_OF(FILL_PRESETS_PSI);
+    return bar ? FILL_PRESETS_BAR : FILL_PRESETS_PSI;
+}
+static const CylinderSpec* bank_presets(bool bar, uint8_t* n) {
+    *n = bar ? COUNT_OF(BANK_PRESETS_BAR) : COUNT_OF(BANK_PRESETS_PSI);
+    return bar ? BANK_PRESETS_BAR : BANK_PRESETS_PSI;
+}
+static const float CU_FT_L = 28.3168f;
+// Source and cylinder within this of each other count as equalized (transducer accuracy
+// is a few tens of PSI).
+static const float EQUALIZED_PSI = 50.0f;
+
+// Free air (litres) per bar of pressure in one bottle.
+static float litres_per_bar(const CylinderSpec& c) {
+    return c.metric ? c.rated : c.rated * CU_FT_L / (c.wp / PSI_PER_BAR);
+}
+static float wp_psi(const CylinderSpec& c) { return c.metric ? c.wp * PSI_PER_BAR : c.wp; }
+
+// "77 cu ft @ 3000 psi" / "12 L @ 232 bar"
+static void spec_text(char* buf, size_t len, const CylinderSpec& c) {
+    if (c.metric) snprintf(buf, len, "%.0f L @ %.0f bar", c.rated, c.wp);
+    else snprintf(buf, len, "%.0f cu ft @ %.0f psi", c.rated, c.wp);
+}
+
+// Free-air flow from a pressure trend, as "about 3.9 CFM" or "about 110 L/min"; empty
+// when there is no steady rise to read.
+static void flow_text(char* buf, size_t len, float psi_per_min, float litres_per_bar_total,
+                      bool bar, bool show_out = false) {
+    const bool out = show_out && psi_per_min <= -10.0f;
+    if (isnan(psi_per_min) || (psi_per_min < 10.0f && !out)) {
+        buf[0] = 0;
+        return;
+    }
+    const float lpm = litres_per_bar_total * fabsf(psi_per_min) / PSI_PER_BAR;
+    const float cfm = lpm / CU_FT_L;
+    const char* dir = out ? " out" : "";
+    if (bar) snprintf(buf, len, "about %.0f L/min%s", lpm, dir);
+    else snprintf(buf, len, cfm < 10.0f ? "about %.1f CFM%s" : "about %.0f CFM%s", cfm, dir);
+}
+
+const CylinderSpec& FillStationGUI::fillCylinder() const {
+    uint8_t n;
+    const CylinderSpec* p = fill_presets(units_bar, &n);
+    return fill_sel[units_bar] < n ? p[fill_sel[units_bar]] : fill_custom[units_bar];
+}
+const CylinderSpec& FillStationGUI::bankCylinder() const {
+    uint8_t n;
+    const CylinderSpec* p = bank_presets(units_bar, &n);
+    return bank_sel[units_bar] < n ? p[bank_sel[units_bar]] : bank_custom[units_bar];
+}
+
+void FillStationGUI::loadFillSettings() {
+    Preferences prefs;
+    prefs.begin("fill", true);
+    // isKey() first: a get on a missing key logs an NVS error on every boot.
+    if (prefs.isKey("mode")) fill_mode = prefs.getBool("mode", false);
+    // A selection per pressure unit, each into its own preset list (one past it = custom).
+    uint8_t n;
+    fill_presets(false, &n);
+    if (prefs.isKey("fsel0")) fill_sel[0] = min<int>(prefs.getUChar("fsel0", 4), n);
+    else if (prefs.isKey("fsel")) fill_sel[0] = min<int>(prefs.getUChar("fsel", 4), n);
+    fill_presets(true, &n);
+    if (prefs.isKey("fsel1")) fill_sel[1] = min<int>(prefs.getUChar("fsel1", 3), n);
+    bank_presets(false, &n);
+    if (prefs.isKey("bsel0")) bank_sel[0] = min<int>(prefs.getUChar("bsel0", 0), n);
+    bank_presets(true, &n);
+    if (prefs.isKey("bsel1")) bank_sel[1] = min<int>(prefs.getUChar("bsel1", 0), n);
+    if (prefs.isKey("bcnt")) bank_count = constrain(prefs.getUChar("bcnt", 4), 1, 12);
+    // A custom size per pressure unit, kept only if it's in that unit's terms.
+    static const char* const FKEYS[2] = {"fcust0", "fcust1"};
+    static const char* const BKEYS[2] = {"bcust0", "bcust1"};
+    for (int u = 0; u < 2; u++) {
+        CylinderSpec c;
+        if (prefs.isKey(FKEYS[u]) && prefs.getBytes(FKEYS[u], &c, sizeof(c)) == sizeof(c) &&
+            c.metric == (u == 1)) {
+            fill_custom[u] = c;
+        }
+        if (prefs.isKey(BKEYS[u]) && prefs.getBytes(BKEYS[u], &c, sizeof(c)) == sizeof(c) &&
+            c.metric == (u == 1)) {
+            bank_custom[u] = c;
+        }
+        strlcpy(fill_custom[u].name, "Custom", sizeof(fill_custom[u].name));
+        strlcpy(bank_custom[u].name, "Custom", sizeof(bank_custom[u].name));
+    }
+    prefs.end();
+}
+
+void FillStationGUI::saveFillSettings() {
+    Preferences prefs;
+    prefs.begin("fill", false);
+    prefs.putBool("mode", fill_mode);
+    prefs.putUChar("fsel0", fill_sel[0]);
+    prefs.putUChar("fsel1", fill_sel[1]);
+    prefs.putUChar("bsel0", bank_sel[0]);
+    prefs.putUChar("bsel1", bank_sel[1]);
+    prefs.remove("fsel");   // single selections from before the per-unit lists
+    prefs.remove("bsel");
+    prefs.putUChar("bcnt", bank_count);
+    prefs.putBytes("fcust0", &fill_custom[0], sizeof(CylinderSpec));
+    prefs.putBytes("fcust1", &fill_custom[1], sizeof(CylinderSpec));
+    prefs.putBytes("bcust0", &bank_custom[0], sizeof(CylinderSpec));
+    prefs.putBytes("bcust1", &bank_custom[1], sizeof(CylinderSpec));
+    prefs.remove("fcust");   // single custom sizes from before the per-unit lists
+    prefs.remove("bcust");
+    prefs.end();
+}
+
+static void set_hidden(lv_obj_t* o, bool hidden) {
+    if (!o) return;
+    if (hidden) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(o, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Shows the columns and buttons for the current mode and Blender Setup choices, then
+// re-centres the columns. Filling mode needs the pressure sensors.
+void FillStationGUI::applyMode() {
+    const bool fill = fillMode();
+    set_hidden(col_left, fill);
+    set_hidden(col_o2, fill);
+    set_hidden(col_he, fill || !helium_enabled);
+    // Hide the whole column, not just its readouts, so applyLayout() re-centres the rest
+    // instead of keeping an empty slot on the right.
+    set_hidden(col_p, fill || !transducers_fitted);
+    set_hidden(fill_panel, !fill);
+    set_hidden(btn_calibrate, fill);
+    set_hidden(btn_presets, fill);
+    set_hidden(btn_mode, !transducers_fitted);
+
+    char buf[24];
+    const CylinderSpec& b = bankCylinder();
+    uint8_t nb;
+    bank_presets(units_bar, &nb);
+    if (bank_sel[units_bar] < nb) snprintf(buf, sizeof(buf), "%u x %s", bank_count, b.name);
+    else snprintf(buf, sizeof(buf), "%u x %.0f%s", bank_count, b.rated, b.metric ? " L" : "");
+    if (label_bank_size) lv_label_set_text(label_bank_size, buf);
+    if (fp_cyl_label) {
+        char spec[32], text[64];
+        spec_text(spec, sizeof(spec), fillCylinder());
+        snprintf(text, sizeof(text), "Cylinder: %s   %s", fillCylinder().name, spec);
+        lv_label_set_text(fp_cyl_label, text);
+    }
+    applyLayout();
+}
+
+void FillStationGUI::updateFillReadouts() {
+    char buf[64];
+    const CylinderSpec& b = bankCylinder();
+    flow_text(buf, sizeof(buf), bank_trend.perMinute(), litres_per_bar(b) * bank_count, units_bar);
+    set_text_if_changed(label_bank_flow, buf);
+    if (!fillMode()) return;
+    // Cascade: how far the open source bottle is above the cylinder, and when they have
+    // equalized, so the operator knows to open the next bottle.
+    const float src = sensors->getBankPSI(), dst = sensors->getFillPSI();
+    const char* eq = "";
+    if (isnan(src) || isnan(dst)) {
+        buf[0] = 0;
+    } else {
+        const float gap = src - dst;
+        const float shown = units_bar ? gap / PSI_PER_BAR : gap;
+        const char* unit = units_bar ? "bar" : "PSI";
+        if (gap > EQUALIZED_PSI) snprintf(buf, sizeof(buf), "%.0f %s above the fill", shown, unit);
+        else if (gap < -EQUALIZED_PSI) snprintf(buf, sizeof(buf), "%.0f %s below the fill", -shown, unit);
+        else buf[0] = 0;
+        if (fabsf(gap) <= EQUALIZED_PSI) eq = "Equalized: open the next bottle";
+    }
+    set_text_if_changed(fp_bank_flow, buf);
+    set_text_if_changed(fp_src_eq, eq);
+
+    const CylinderSpec& c = fillCylinder();
+    const float rate = fill_trend.perMinute();
+    flow_text(buf, sizeof(buf), rate, litres_per_bar(c), units_bar);
+    set_text_if_changed(fp_fill_flow, buf);
+
+    // Time to full: what's left to the cylinder's working pressure at the current rate.
+    const float p = sensors->getFillPSI();
+    const float left = wp_psi(c) - p;
+    if (isnan(p) || isnan(rate)) {
+        buf[0] = 0;
+    } else if (left <= 20.0f) {
+        snprintf(buf, sizeof(buf), "At working pressure");
+    } else if (rate < 10.0f) {
+        buf[0] = 0;
+    } else {
+        const unsigned long secs = (unsigned long)(left / rate * 60.0f);
+        if (secs >= 3600) snprintf(buf, sizeof(buf), "Full in %lu h %lu min", secs / 3600, secs % 3600 / 60);
+        else snprintf(buf, sizeof(buf), "Full in %lu min %02lu s", secs / 60, secs % 60);
+    }
+    set_text_if_changed(fp_fill_eta, buf);
+}
+
+// Two matching cards, Source and Fill, spanning the same width as the status panel and the
+// bottom row (applyLayout() places the panel). Each: name, pressure, rate and two lines
+// below. Source is whichever bottle is open on the bank transducer, cascade-style: its
+// lines say how far it is above the cylinder, then when they have equalized. Fill: flow,
+// time to full, and the Cylinder button.
+static lv_obj_t* make_fill_card(lv_obj_t* parent, const char* title, lv_align_t align,
+                                lv_obj_t** psi, lv_obj_t** rate, lv_obj_t** flow, lv_obj_t** extra,
+                                lv_obj_t** btn_label, lv_event_cb_t cb, void* user) {
+    lv_obj_t* card = make_box(parent, 0, 0, 10, 254, COLOR_PICKER_BG);
+    lv_obj_set_width(card, lv_pct(49));
+    lv_obj_align(card, align, 0, 0);
+    lv_obj_set_style_radius(card, 8, 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x2A3350), 0);
+
+    make_centered_label(card, title, &lv_font_montserrat_28, COLOR_BTN_ACTIVE, LV_ALIGN_TOP_MID, 8);
+    *psi = make_centered_label(card, "----", &lv_font_montserrat_48, COLOR_LABEL, LV_ALIGN_TOP_MID, 44);
+    *rate = make_centered_label(card, "", &lv_font_montserrat_20, COLOR_PICKER_DIM, LV_ALIGN_TOP_MID, 102);
+    *flow = make_centered_label(card, "", &lv_font_montserrat_20, COLOR_LABEL, LV_ALIGN_TOP_MID, 130);
+    *extra = make_centered_label(card, "", &lv_font_montserrat_20, COLOR_O2, LV_ALIGN_TOP_MID, 158);
+    // Centred labels re-centre as their text changes length.
+    lv_obj_t* labels[] = {*psi, *rate, *flow, *extra};
+    for (lv_obj_t* l : labels) {
+        lv_obj_set_width(l, lv_pct(100));
+        lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    }
+
+    if (!cb) return card;   // no size to pick: the Source card
+    lv_obj_t* btn = lv_btn_create(card);
+    lv_obj_set_size(btn, lv_pct(92), 48);
+    lv_obj_align(btn, LV_ALIGN_BOTTOM_MID, 0, -12);
+    lv_obj_set_style_bg_color(btn, COLOR_BG, 0);
+    lv_obj_set_style_border_width(btn, 1, 0);
+    lv_obj_set_style_border_color(btn, COLOR_BTN, 0);
+    lv_obj_set_style_radius(btn, 6, 0);
+    lv_obj_set_style_shadow_width(btn, 0, 0);
+    lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, user);
+    *btn_label = make_label(btn, "", &lv_font_montserrat_16, COLOR_LABEL, 0, 0);
+    lv_obj_center(*btn_label);
+    return card;
+}
+
+void FillStationGUI::createFillPanel() {
+    fill_panel = lv_obj_create(screen);
+    lv_obj_remove_style_all(fill_panel);
+    lv_obj_set_size(fill_panel, SCREEN_WIDTH, 254);
+    lv_obj_set_pos(fill_panel, 0, 72);
+    lv_obj_clear_flag(fill_panel, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+
+    make_fill_card(fill_panel, "Source", LV_ALIGN_TOP_LEFT, &fp_bank_psi, &fp_bank_rate, &fp_bank_flow,
+                   &fp_src_eq, nullptr, nullptr, this);
+    lv_obj_set_style_text_color(fp_src_eq, COLOR_WARN, 0);   // a prompt to act
+    make_fill_card(fill_panel, "Fill", LV_ALIGN_TOP_RIGHT, &fp_fill_psi, &fp_fill_rate, &fp_fill_flow,
+                   &fp_fill_eta, &fp_cyl_label, cyl_btn_handler, this);
+}
+
+// Mode: a choice of Blending or Filling, the current one ticked.
+static const char* MODE_BTNS_BLENDING[] = {LV_SYMBOL_OK " Blending", "Filling", "Cancel", ""};
+static const char* MODE_BTNS_FILLING[] = {"Blending", LV_SYMBOL_OK " Filling", "Cancel", ""};
+
+void FillStationGUI::mode_btn_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    lv_obj_t* m = make_msgbox("Mode",
+                              "Blending: blend to the O2 and helium targets.\n"
+                              "Filling: pressures, flow and time to full.\n"
+                              "The valves stay shut while filling.",
+                              self->fill_mode ? MODE_BTNS_FILLING : MODE_BTNS_BLENDING);
+    lv_obj_set_width(m, 560);
+    lv_obj_add_event_cb(m, mode_choice_handler, LV_EVENT_VALUE_CHANGED, self);
+}
+
+void FillStationGUI::mode_choice_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    lv_obj_t* m = lv_event_get_current_target(e);
+    const uint16_t choice = lv_msgbox_get_active_btn(m);
+    lv_msgbox_close_async(m);
+    if (choice > 1 || (choice == 1) == self->fill_mode) return;   // Cancel, or no change
+    self->fill_mode = choice == 1;
+    self->saveFillSettings();
+    self->applyMode();
+    Serial.printf("mode: %s\n", self->fill_mode ? "filling" : "blending");
+}
+
+void FillStationGUI::bank_btn_handler(lv_event_t* e) {
+    ((FillStationGUI*)lv_event_get_user_data(e))->openCylinderPicker(true);
+}
+
+void FillStationGUI::cyl_btn_handler(lv_event_t* e) {
+    ((FillStationGUI*)lv_event_get_user_data(e))->openCylinderPicker(false);
+}
+
+// Picker page: preset tiles, a custom size and working pressure, and for a bank the
+// number of bottles. A choice takes effect at once; Back returns to the main screen.
+void FillStationGUI::createCylinderScreen() {
+    screen_cyl = makeSubScreen("Cylinder", menu_back_handler);
+    cyl_body = lv_obj_create(screen_cyl);
+    lv_obj_remove_style_all(cyl_body);
+    lv_obj_set_size(cyl_body, SCREEN_WIDTH, 370);
+    lv_obj_set_pos(cyl_body, 0, BANNER_H);
+    lv_obj_clear_flag(cyl_body, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+static lv_obj_t* make_tile(lv_obj_t* parent, const char* top, const char* bottom, lv_coord_t x,
+                           lv_coord_t y) {
+    lv_obj_t* btn = lv_btn_create(parent);
+    lv_obj_set_size(btn, 176, 60);
+    lv_obj_set_pos(btn, x, y);
+    lv_obj_set_style_radius(btn, 6, 0);
+    lv_obj_set_style_shadow_width(btn, 0, 0);
+    lv_obj_set_style_border_width(btn, 1, 0);
+    lv_obj_set_style_border_color(btn, COLOR_BTN, 0);
+    lv_obj_set_style_pad_all(btn, 0, 0);
+    make_centered_label(btn, top, &lv_font_montserrat_20, COLOR_LABEL, LV_ALIGN_TOP_MID, 6);
+    make_centered_label(btn, bottom, &lv_font_montserrat_14, COLOR_PICKER_DIM, LV_ALIGN_BOTTOM_MID, -6);
+    return btn;
+}
+
+static void make_stepper(lv_obj_t* parent, const char* name, lv_coord_t y, int id_minus,
+                         lv_event_cb_t cb, void* user, lv_obj_t** value) {
+    make_label(parent, name, &lv_font_montserrat_20, COLOR_LABEL, 24, y + 12);
+    lv_obj_t* minus = make_action_button(parent, "-", 220, y, 60, 46, COLOR_BTN);
+    lv_obj_set_style_text_font(lv_obj_get_child(minus, 0), &lv_font_montserrat_28, 0);
+    lv_obj_set_user_data(minus, (void*)(intptr_t)id_minus);
+    lv_obj_add_event_cb(minus, cb, LV_EVENT_ALL, user);
+    *value = make_label(parent, "", &lv_font_montserrat_24, COLOR_LABEL, 0, 0);
+    lv_obj_set_width(*value, 180);
+    lv_obj_set_style_text_align(*value, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(*value, 284, y + 10);
+    lv_obj_t* plus = make_action_button(parent, "+", 468, y, 60, 46, COLOR_BTN);
+    lv_obj_set_style_text_font(lv_obj_get_child(plus, 0), &lv_font_montserrat_28, 0);
+    lv_obj_set_user_data(plus, (void*)(intptr_t)(id_minus + 1));
+    lv_obj_add_event_cb(plus, cb, LV_EVENT_ALL, user);
+}
+
+void FillStationGUI::openCylinderPicker(bool bank) {
+    cyl_for_bank = bank;
+    lv_obj_clean(cyl_body);
+    // The sub-screen's banner title is drawn twice, a pixel apart, to look bold: set every
+    // label in the banner (the Back button's label sits inside its button, not here).
+    lv_obj_t* banner = lv_obj_get_child(screen_cyl, 0);
+    for (uint32_t i = 0; i < lv_obj_get_child_cnt(banner); i++) {
+        lv_obj_t* child = lv_obj_get_child(banner, i);
+        if (lv_obj_check_type(child, &lv_label_class)) lv_label_set_text(child, bank ? "Bank size" : "Cylinder");
+    }
+
+    uint8_t n;
+    const CylinderSpec* presets = bank ? bank_presets(units_bar, &n) : fill_presets(units_bar, &n);
+    cyl_tile_n = n + 1;
+    char spec[32];
+    for (uint8_t i = 0; i <= n; i++) {
+        const lv_coord_t x = 24 + (i % 4) * 190, y = 14 + (i / 4) * 70;
+        if (i < n) {
+            spec_text(spec, sizeof(spec), presets[i]);
+            cyl_tiles[i] = make_tile(cyl_body, presets[i].name, spec, x, y);
+        } else {
+            cyl_tiles[i] = make_tile(cyl_body, "Custom", "set below", x, y);
+        }
+        lv_obj_set_user_data(cyl_tiles[i], (void*)(intptr_t)i);
+        lv_obj_add_event_cb(cyl_tiles[i], cyl_tile_handler, LV_EVENT_CLICKED, this);
+    }
+    const lv_coord_t rows_end = 14 + ((n + 4) / 4) * 70;
+    make_stepper(cyl_body, "Custom size", rows_end + 6, 0, cyl_step_handler, this, &cyl_size_val);
+    make_stepper(cyl_body, "Rated at", rows_end + 60, 2, cyl_step_handler, this, &cyl_wp_val);
+    cyl_count_val = nullptr;
+    if (bank) make_stepper(cyl_body, "Bottles", rows_end + 114, 4, cyl_step_handler, this, &cyl_count_val);
+    refreshCylinderPicker();
+    lv_scr_load(screen_cyl);
+}
+
+void FillStationGUI::refreshCylinderPicker() {
+    const uint8_t sel = cyl_for_bank ? bank_sel[units_bar] : fill_sel[units_bar];
+    for (uint8_t i = 0; i < cyl_tile_n; i++) {
+        const bool on = i == sel;
+        lv_obj_set_style_bg_color(cyl_tiles[i], on ? COLOR_BTN : COLOR_PICKER_BG, 0);
+        lv_obj_set_style_border_width(cyl_tiles[i], on ? 2 : 1, 0);
+        lv_obj_set_style_border_color(cyl_tiles[i], on ? COLOR_BTN_ACTIVE : COLOR_BTN, 0);
+        // The spec line under the name: dim on a plain tile, light on the selected one.
+        lv_obj_set_style_text_color(lv_obj_get_child(cyl_tiles[i], 1), on ? COLOR_BTN_TEXT : COLOR_PICKER_DIM, 0);
+    }
+    const CylinderSpec& c = (cyl_for_bank ? bank_custom : fill_custom)[units_bar];
+    char buf[24];
+    snprintf(buf, sizeof(buf), c.metric ? "%.0f L" : "%.0f cu ft", c.rated);
+    lv_label_set_text(cyl_size_val, buf);
+    snprintf(buf, sizeof(buf), c.metric ? "%.0f bar" : "%.0f psi", c.wp);
+    lv_label_set_text(cyl_wp_val, buf);
+    if (cyl_count_val) {
+        snprintf(buf, sizeof(buf), "%u", bank_count);
+        lv_label_set_text(cyl_count_val, buf);
+    }
+    applyMode();
+}
+
+void FillStationGUI::cyl_tile_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    const uint8_t i = (uint8_t)(intptr_t)lv_obj_get_user_data(lv_event_get_target(e));
+    (self->cyl_for_bank ? self->bank_sel : self->fill_sel)[self->units_bar] = i;
+    self->saveFillSettings();
+    self->refreshCylinderPicker();
+}
+
+// Custom size (ids 0/1), working pressure (2/3) and bank bottle count (4/5). Tap for one
+// step, hold to step ten at a time. Editing the custom size selects it.
+void FillStationGUI::cyl_step_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    const lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_RELEASED) {
+        self->saveFillSettings();
+        return;
+    }
+    if (code != LV_EVENT_SHORT_CLICKED && code != LV_EVENT_LONG_PRESSED_REPEAT) return;
+    const int id = (int)(intptr_t)lv_obj_get_user_data(lv_event_get_target(e));
+    const int dir = (id % 2) ? 1 : -1;
+    const int mult = code == LV_EVENT_LONG_PRESSED_REPEAT ? 10 : 1;
+
+    if (id >= 4) {
+        self->bank_count = (uint8_t)constrain((int)self->bank_count + dir * mult, 1, 12);
+    } else {
+        CylinderSpec& c = (self->cyl_for_bank ? self->bank_custom : self->fill_custom)[self->units_bar];
+        if (id < 2) {
+            c.rated = constrain(c.rated + dir * mult, 1.0f, c.metric ? 200.0f : 1000.0f);
+        } else {
+            const float step = c.metric ? 5.0f : 50.0f;
+            c.wp = constrain(c.wp + dir * mult * step, c.metric ? 100.0f : 1500.0f,
+                             c.metric ? 450.0f : 6500.0f);
+        }
+        uint8_t n;
+        if (self->cyl_for_bank) bank_presets(self->units_bar, &n);
+        else fill_presets(self->units_bar, &n);
+        (self->cyl_for_bank ? self->bank_sel : self->fill_sel)[self->units_bar] = n;   // custom
+    }
+    self->refreshCylinderPicker();
+}
+
+// ---------------------------------------------------------------------------------
 // Emergency stop
 
 void FillStationGUI::createEmergencyStop() {
@@ -2048,6 +2741,7 @@ void FillStationGUI::update() {
 
     if (lv_scr_act() == screen_pcal) updatePressureCalScreen();
     if (lv_scr_act() == screen_valvetest) updateValveTestScreen();
+    if (lv_scr_act() == screen_maint) updateMaintenanceScreen();
 
     if (scan_pending && !wifi->scanning()) {
         scan_pending = false;
@@ -2091,8 +2785,10 @@ void FillStationGUI::update() {
         const float fill = sensors->getFillPSI() * scale;
         snprintf(buf, sizeof(buf), isnan(bank) ? "----" : "%.0f", bank);
         set_text_if_changed(label_bank_psi, buf);
+        set_text_if_changed(fp_bank_psi, buf);
         snprintf(buf, sizeof(buf), isnan(fill) ? "----" : "%.0f", fill);
-        set_text_if_changed(label_fill_psi, buf);
+        set_text_if_changed(fp_fill_psi, buf);
+        updatePressureRates();
     }
 
     // Diagnostics replace each gas's sensor line with its ADC channel and raw mV. The

@@ -18,6 +18,8 @@ public:
     bool getBool(const char* k, bool d = false) { get(k, &d, sizeof d); return d; }
     size_t putUChar(const char* k, uint8_t v) { return put(k, &v, sizeof v); }
     uint8_t getUChar(const char* k, uint8_t d = 0) { get(k, &d, sizeof d); return d; }
+    size_t putUShort(const char* k, uint16_t v) { return put(k, &v, sizeof v); }
+    uint16_t getUShort(const char* k, uint16_t d = 0) { get(k, &d, sizeof d); return d; }
     size_t putUInt(const char* k, uint32_t v) { return put(k, &v, sizeof v); }
     uint32_t getUInt(const char* k, uint32_t d = 0) { get(k, &d, sizeof d); return d; }
     size_t putString(const char* k, const char* v) { return put(k, v, std::strlen(v) + 1); }

@@ -57,6 +57,15 @@ int main() {
     prefs.putFloat("o2_duty", SIM_VALVE_CRACK * VALVE_MAX_DUTY);
     prefs.putFloat("he_duty", SIM_VALVE_CRACK * VALVE_MAX_DUTY);
     prefs.end();
+    // Sample maintenance counts, so the demo's Setup > Maintenance page has something to
+    // show. Nothing is overdue, so the main screen still opens on "Ready".
+    prefs.begin("maint", false);
+    prefs.putUInt("total_s", 412u * 3600u + 1800u);
+    prefs.putUInt("filter_s", 18u * 3600u + 1440u);
+    prefs.putUShort("filter_lim", 25);
+    prefs.putUInt("oil_s", 112u * 3600u);
+    prefs.putUShort("oil_lim", 250);
+    prefs.end();
 
     setup();
     last_ms = millis();

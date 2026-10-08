@@ -5,6 +5,7 @@
 #include "sensors.h"
 #include "valve_control.h"
 #include "wifi_manager.h"
+#include "maintenance.h"
 
 
 // A gas preset, O2/He in percent.
@@ -17,6 +18,24 @@ struct GasPreset {
 #define MAX_PRESETS 16
 
 #define PSI_PER_BAR 14.5038f
+
+// A cylinder or bank bottle, as it's sold: rated volume at a working pressure. Imperial
+// specs are rated cu ft at psi; metric ones are water capacity in litres at bar.
+struct CylinderSpec {
+    char name[12];
+    float rated;   // cu ft (imperial) or water litres (metric)
+    float wp;      // working pressure, psi (imperial) or bar (metric)
+    bool metric;
+};
+
+// Straight-line trend of one pressure over the last 30 s, sampled once a second.
+struct PressureTrend {
+    static const int SIZE = 31;
+    float t[SIZE], v[SIZE];
+    int head = 0, n = 0;
+    void add(float t_s, float psi);   // NAN clears the history
+    float perMinute() const;          // NAN until there are 10 s of readings
+};
 
 struct KnobState {
     const char* name;
@@ -32,11 +51,17 @@ public:
     void update();
 
     void setCompressorRunning(bool running);
+    // Hour meter and maintenance reminders: shown on Setup > Maintenance and, when due,
+    // on the status panel. Set before init().
+    void setMaintenance(Maintenance* m) { maint = m; }
     // Set while main.cpp holds the O2 valve shut because the mix is over target.
     void setO2OverTarget(bool over) { o2_over_target = over; }
     void setIpAddress(const char* ip);
 
     bool emergencyStopped() { return estop_active; }
+    // Filling mode: pressures, flow and time to full for a cylinder fill; blending is off
+    // and main.cpp keeps both valves shut. Only offered while pressure sensors are fitted.
+    bool fillMode() { return fill_mode && transducers_fitted; }
     void triggerEmergencyStop();
 
     float getOxygenTarget() { return o2_knob.value; }
@@ -72,6 +97,51 @@ private:
     lv_obj_t* screen_network;
     lv_obj_t* screen_pcal;      // pressure calibration
     lv_obj_t* screen_valvetest = nullptr;
+    lv_obj_t* screen_maint = nullptr;
+
+    // Blending / Filling mode, and what is being filled. Persisted in NVS namespace "fill".
+    bool fill_mode = false;
+    // Per pressure unit ([0] PSI, [1] BAR): index into that unit's preset list, one past
+    // the end = custom. Defaults AL80 / 12 L and 444 cu ft / 50 L.
+    uint8_t fill_sel[2] = {4, 3};
+    uint8_t bank_sel[2] = {0, 0};
+    uint8_t bank_count = 4;
+    // Custom sizes, per pressure unit like the presets.
+    CylinderSpec fill_custom[2] = {{"Custom", 80.0f, 3000.0f, false}, {"Custom", 12.0f, 232.0f, true}};
+    CylinderSpec bank_custom[2] = {{"Custom", 444.0f, 4500.0f, false}, {"Custom", 50.0f, 300.0f, true}};
+    lv_obj_t* btn_mode = nullptr;
+    lv_obj_t* label_mode = nullptr;
+    lv_obj_t* fill_panel = nullptr;
+    lv_obj_t* fp_bank_psi = nullptr;
+    lv_obj_t* fp_bank_rate = nullptr;
+    lv_obj_t* fp_fill_psi = nullptr;
+    lv_obj_t* fp_fill_rate = nullptr;
+    lv_obj_t* fp_fill_flow = nullptr;
+    lv_obj_t* fp_fill_eta = nullptr;
+    lv_obj_t* fp_cyl_label = nullptr;
+    lv_obj_t* fp_bank_flow = nullptr;     // Source card: how far above the fill
+    lv_obj_t* fp_src_eq = nullptr;        // Source card: "Equalized" notice
+    lv_obj_t* btn_bank = nullptr;          // Blending mode: bank size, where the Fill readout was
+    lv_obj_t* label_bank_size = nullptr;
+    lv_obj_t* label_bank_flow = nullptr;
+    // Cylinder / bank picker page, rebuilt each time it opens.
+    lv_obj_t* screen_cyl = nullptr;
+    lv_obj_t* cyl_title = nullptr;
+    lv_obj_t* cyl_body = nullptr;
+    bool cyl_for_bank = false;
+    lv_obj_t* cyl_tiles[16] = {};
+    uint8_t cyl_tile_n = 0;
+    lv_obj_t* cyl_size_val = nullptr;
+    lv_obj_t* cyl_wp_val = nullptr;
+    lv_obj_t* cyl_count_val = nullptr;
+    PressureTrend bank_trend, fill_trend;
+    uint32_t rate_sample_ms = 0;
+    Maintenance* maint = nullptr;
+    lv_obj_t* mt_total = nullptr;
+    lv_obj_t* mt_hours[MAINT_COUNT] = {};
+    lv_obj_t* mt_limit[MAINT_COUNT] = {};
+    lv_obj_t* mt_state[MAINT_COUNT] = {};
+    uint8_t mt_pending_reset = 0;
 
     // Valve test page.
     lv_obj_t* vt_gas = nullptr;
@@ -150,9 +220,7 @@ private:
     lv_obj_t* label_he_mv;
 
     lv_obj_t* label_bank_psi;
-    lv_obj_t* label_fill_psi;
     lv_obj_t* label_bank_unit;
-    lv_obj_t* label_fill_unit;
 
     KnobState o2_knob;
     KnobState he_knob;
@@ -175,6 +243,19 @@ private:
     void createNetworkScreen();
     void createPressureCalScreen();
     void createValveTestScreen();
+    void createMaintenanceScreen();
+    void createFillPanel();
+    void createCylinderScreen();
+    void openCylinderPicker(bool bank);
+    void refreshCylinderPicker();
+    void applyMode();
+    void updateFillReadouts();
+    void loadFillSettings();
+    void saveFillSettings();
+    const CylinderSpec& fillCylinder() const;
+    const CylinderSpec& bankCylinder() const;
+    void updatePressureRates();
+    void updateMaintenanceScreen();
     void updateValveTestScreen();
     void setValveTestOpening(float opening);
     void updatePressureCalScreen();
@@ -234,6 +315,16 @@ private:
     static void menu_network_handler(lv_event_t* e);
     static void menu_pcal_handler(lv_event_t* e);
     static void menu_valvetest_handler(lv_event_t* e);
+    static void menu_maint_handler(lv_event_t* e);
+    static void mode_btn_handler(lv_event_t* e);
+    static void mode_choice_handler(lv_event_t* e);
+    static void bank_btn_handler(lv_event_t* e);
+    static void cyl_btn_handler(lv_event_t* e);
+    static void cyl_tile_handler(lv_event_t* e);
+    static void cyl_step_handler(lv_event_t* e);
+    static void maint_step_handler(lv_event_t* e);
+    static void maint_reset_handler(lv_event_t* e);
+    static void maint_reset_confirm_handler(lv_event_t* e);
     static void valvetest_back_handler(lv_event_t* e);
     static void valvetest_gas_handler(lv_event_t* e);
     static void valvetest_slider_handler(lv_event_t* e);

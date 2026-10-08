@@ -477,6 +477,69 @@ regulator pressure, a different valve):
 keeps that valve shut: there is nothing to add, and with a start point set a loop chasing
 a tenth of a percent would otherwise crack the valve open.
 
+## Maintenance Counters
+
+**Setup > Maintenance** is a compressor hour meter. It counts only while the
+compressor-running input is on, so it measures pumping time whatever the unit is
+connected to.
+
+| Counter | Reset | Reminder |
+|---|---|---|
+| Compressor hours | Never (lifetime total) | - |
+| Filter cartridge | Reset button, after changing it | Limit in hours; 0 = off |
+| Oil change | Reset button, after changing it | Limit in hours; 0 = off |
+
+Set each limit with - / + (tap for 1 h, hold to step 10 h). When a counter reaches its
+limit the status panel shows "Filter change due" or "Oil change due" while the compressor
+is stopped. It is a reminder only and doesn't block blending. Counts are saved every
+5 minutes while the compressor runs and whenever it stops, in NVS namespace `maint`,
+so a power cut loses at most 5 minutes.
+
+Flow (CFM or L/min) needs the volume being filled, so it lives with the Blending and
+Filling modes below, where the operator says what that volume is.
+
+## Blending and Filling Modes
+
+With pressure sensors fitted, a **Mode** button sits left of Setup in the banner; it offers
+**Blending** or **Filling**, the current one ticked. The mode is remembered across restarts (NVS namespace `fill`, with the bank and cylinder
+choices).
+
+| | Blending | Filling |
+|---|---|---|
+| Main screen | O2, helium, targets and blending, as before | Source and Fill cards |
+| Blending | Runs as set | **Off: both valves held shut** |
+| Pressure readouts | Bank, with its rate | Source (the bank transducer) and Fill, each with its rate |
+| Flow | Into the **bank**: tap **Bank size** (where the Fill reading was) | Into the **cylinder**: tap **Cylinder** |
+| Also shown | | Time until the cylinder reaches its working pressure; how far the source is above the fill, then "Equalized: open the next bottle" |
+
+**Pressure rate.** Under each pressure: `PSI  +420/min`, or bar per minute in BAR mode.
+A straight-line fit over the last 30 s of once-a-second readings, rounded to 5 PSI
+(0.5 bar); "steady" when it isn't moving, negative while the bank is drawn down, "..."
+for the first 10 s. It needs no volume, so it's always right.
+
+**Cascade filling.** Filling mode calls the bank transducer **Source**: on a cascade it
+reads whichever bottle is open. The card shows how far that bottle is above the cylinder,
+and once they're within 50 PSI, "Equalized: open the next bottle". Bank size and bank flow
+belong to Blending mode, where the compressor is filling the whole bank.
+
+**Flow and time to full.** Free air in = bottle volume x pressure rise. Volumes come from
+how bottles are sold, rated volume at a working pressure: a 444 cu ft @ 4500 psi bottle
+holds 444/4500 cu ft of air per PSI, so four of them rising 600 PSI a minute take about
+237 CFM. Shown as "about": a cylinder warms as it fills, which reads a little high
+mid-fill. Time to full is what's left to the cylinder's working pressure at the current
+rate.
+
+The presets follow the pressure units on Blender Setup: PSI shows sizes in cu ft, BAR in
+litres of water. Each unit has its own selection and its own custom size and working
+pressure, so switching units never leaves an odd size selected.
+
+| | PSI | BAR |
+|---|---|---|
+| Cylinders | 40 cu ft @ 3000 psi, 50 @ 2640, AL63 @ 3000, 72 @ 3000, AL80 (77) @ 3000, LP85 @ 2640, HP100 @ 3442, HP120 @ 3442, LP120 @ 2640 | 3 L @ 200 bar, 7 L, 10 L, 12 L, 15 L (all @ 232), 12 L @ 300, twin 12 (24 L) @ 232 |
+| Bank bottles (1-12) | 444 cu ft @ 4500 psi, 300 cu ft @ 4500 psi | 50 L @ 300 bar, 50 L @ 200 bar, 80 L @ 300 bar |
+
+Defaults: an AL80 or 12 L cylinder, and a bank of 4 x 444 cu ft or 4 x 50 L.
+
 ## Safety Notes
 
 1. **Valve Fail-Safe**: On startup, all valves are closed

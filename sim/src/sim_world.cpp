@@ -36,7 +36,7 @@ float o2_flow = SIM_O2_FLOW;   // adjustable at run time, for tests
 float he_share = 0.0f;       // helium fraction of the gas at the A0 cell
 float o2_added = 0.0f;       // fraction of the final gas that is added pure oxygen
 float bank_psi = 2840.0f;
-const float fill_psi = 1180.0f;
+float fill_psi = 1180.0f;   // a cylinder on the fill whip, filling while the compressor runs
 uint32_t last_ms = 0;
 
 
@@ -65,6 +65,7 @@ void step() {
     he_share += (he_target - he_share) * k;
     o2_added += (o2_target - o2_added) * k;
     if (flowing) bank_psi = std::fmin(4500.0f, bank_psi + 10.0f * dt);
+    if (flowing) fill_psi = std::fmin(3400.0f, fill_psi + 6.0f * dt);
 }
 
 float o2AtA0() { return AIR_O2_PERCENT * (1.0f - he_share); }
