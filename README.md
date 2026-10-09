@@ -77,7 +77,8 @@ This system controls gas blending. Always:
 - Install pressure relief valves
 - Follow oxygen handling safety procedures
 - Test thoroughly before use
-- Add emergency stop functionality
+- Check the O2 and helium limits on Setup > Limits & Safety (defaults O2 40%, helium 50%)
+- Consider the optional hardware emergency stop in [HARDWARE_SETUP.md](HARDWARE_SETUP.md#optional-external-emergency-stop)
 - Use proper electrical isolation
 
 ## License

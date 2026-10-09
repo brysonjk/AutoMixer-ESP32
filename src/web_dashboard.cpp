@@ -30,6 +30,7 @@ main{max-width:720px;margin:0 auto;padding:16px}
 .pr{grid-column:1/-1;display:flex;justify-content:space-around;padding:12px}
 .pr h3{margin:0;font-size:18px;color:#9aa4dc}
 .pr .big{font-size:40px}
+@media(max-width:520px){.cols{grid-template-columns:1fr}.big{font-size:44px}}
 .solo{grid-column:1/-1}
 [hidden]{display:none!important}
 .ctl{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:12px}
@@ -47,12 +48,28 @@ button:disabled,input:disabled{opacity:.35}
 .status{margin-top:14px;display:flex;justify-content:space-between;color:var(--dim)}
 #estop{width:100%;height:64px;margin-bottom:14px;border:0;border-radius:10px;background:#d32f2f;color:#fff;font-size:24px;font-weight:700}
 #estop.on{background:#7a1a1a;font-size:18px;font-weight:400}
+#stbox{background:var(--panel);border-radius:10px;padding:10px 14px;margin-bottom:14px;border-left:4px solid var(--dim)}
+#stbox.warn{border-color:var(--warn)} #stbox.stop{border-color:#ff5566}
+#sttitle{font-size:20px} #stdetail{color:var(--dim);font-size:14px;margin-top:2px}
+#stbox.stop #sttitle{color:#ff5566}
+.fc h2{color:#9aa4dc} .fc .big{color:#e8ecf2}
+.fc .line{font-size:16px;margin-top:6px;min-height:20px}
+.fc .eq{color:var(--warn)}
+.fc .cyl{margin-top:10px;padding:8px;border:1px solid #2a3450;border-radius:8px;font-size:15px}
 </style></head><body>
 <header><span class="brand">DarkWaterDiving.com</span><h1>Auto Mixer</h1><span id="badge">REMOTE</span></header>
 <main>
 <div id="notice" class="notice">Connecting...</div>
 <button id="estop">EMERGENCY STOP</button>
-<div class="cols">
+<div id="stbox"><div id="sttitle">--</div><div id="stdetail"></div></div>
+<div class="cols" id="fillview" hidden>
+ <div class="col fc"><h2>Source</h2><div class="big" id="fsrc">----</div>
+  <div class="small" id="fsrcrate"></div><div class="line" id="fsrcgap"></div><div class="line eq" id="fsrceq"></div></div>
+ <div class="col fc"><h2>Fill</h2><div class="big" id="ffill">----</div>
+  <div class="small" id="ffillrate"></div><div class="line" id="fflow"></div><div class="line" id="feta"></div>
+  <div class="cyl" id="fcyl"></div></div>
+</div>
+<div class="cols" id="blendview">
  <div class="col o2" id="o2card"><h2>Oxygen</h2><div class="big" id="o2pct">--.-</div>
   <div class="small" id="o2mv">S2: -- mV</div><div class="small" id="o2info"></div>
   <div class="ctl"><button data-g="o2" data-d="-1">-</button><input id="o2t" type="text" inputmode="numeric" maxlength="3" autocomplete="off">
@@ -63,8 +80,9 @@ button:disabled,input:disabled{opacity:.35}
   <button data-g="he" data-d="1">+</button></div><button class="set" data-set="he">Set He target</button></div>
  <div class="col pr" id="prcard"><div><h3>Bank</h3><div class="big" id="bank">----</div><div class="small punit">PSI</div></div>
   <div><h3>Fill</h3><div class="big" id="fill">----</div><div class="small punit">PSI</div></div></div>
+ <div class="small solo" id="banksize"></div>
 </div>
-<div class="row"><label for="pin">PIN</label><input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="6 digits"></div>
+<div class="row" id="pinrow"><label for="pin">PIN</label><input id="pin" type="password" inputmode="numeric" maxlength="6" placeholder="6 digits"></div>
 <div id="msg"></div>
 <div class="status"><span id="comp"></span><span id="sys"></span></div>
 </main>
@@ -85,6 +103,18 @@ async function poll(){
   setControls(armed&&!s.locked);
   // Follow the unit's Blender Setup: Nitrox only hides helium, no transducers hides
   // pressure, and pressure comes already converted to the unit's units.
+  // Same view as the unit: Filling shows the Source and Fill cards, Blending the gases.
+  const fill=s.fill_mode&&s.pressure, f=s.fillv||{};
+  $('fillview').hidden=!fill; $('blendview').hidden=fill; $('pinrow').hidden=fill;
+  const pv=v=>v==null?'----':v.toFixed(0);
+  $('fsrc').textContent=pv(s.bank); $('ffill').textContent=pv(s.fill);
+  $('fsrcrate').textContent=f.bank_rate||''; $('fsrcgap').textContent=f.bank_gap||'';
+  $('fsrceq').textContent=f.bank_eq||''; $('ffillrate').textContent=f.fill_rate||'';
+  $('fflow').textContent=f.fill_flow||''; $('feta').textContent=f.fill_eta||'';
+  $('fcyl').textContent=f.cylinder||'';
+  $('banksize').textContent=s.pressure&&f.bank_size?('Bank '+f.bank_size+(f.bank_flow?'  -  '+f.bank_flow:'')):'';
+  $('sttitle').textContent=s.status; $('stdetail').textContent=s.detail||'';
+  $('stbox').className=s.estop?'stop':(/over|fault|check|not/i.test(s.status)?'warn':'');
   $('hecard').hidden=!s.he_on; $('o2card').classList.toggle('solo',!s.he_on);
   $('prcard').hidden=!s.pressure;
   document.querySelectorAll('.punit').forEach(e=>e.textContent=s.punit);
@@ -98,7 +128,6 @@ async function poll(){
   $('bank').textContent=s.bank==null?'----':s.bank.toFixed(0);
   $('fill').textContent=s.fill==null?'----':s.fill.toFixed(0);
   $('comp').textContent='Compressor: '+s.compressor;
-  $('sys').textContent=s.status;
   $('estop').className=s.estop?'on':'';
   $('estop').textContent=s.estop?'STOPPED - resume at the unit':'EMERGENCY STOP';
  }catch(e){$('notice').textContent='Lost connection to the unit - retrying...';$('notice').className='notice'}
@@ -215,6 +244,18 @@ void WebDashboard::publish() {
     strlcpy(s.pin, gui->remotePin(), sizeof(s.pin));
     strlcpy(s.compressor, gui->compressorText(), sizeof(s.compressor));
     strlcpy(s.status, gui->systemStatusText(), sizeof(s.status));
+    strlcpy(s.detail, gui->statusDetailText(), sizeof(s.detail));
+    s.fill_mode = gui->fillMode();
+    const FillStationGUI::FillTexts t = gui->fillTexts();
+    strlcpy(s.bank_rate, t.bank_rate, sizeof(s.bank_rate));
+    strlcpy(s.bank_gap, t.bank_gap, sizeof(s.bank_gap));
+    strlcpy(s.bank_eq, t.bank_eq, sizeof(s.bank_eq));
+    strlcpy(s.fill_rate, t.fill_rate, sizeof(s.fill_rate));
+    strlcpy(s.fill_flow, t.fill_flow, sizeof(s.fill_flow));
+    strlcpy(s.fill_eta, t.fill_eta, sizeof(s.fill_eta));
+    strlcpy(s.cylinder, t.cylinder, sizeof(s.cylinder));
+    strlcpy(s.bank_size, t.bank_size, sizeof(s.bank_size));
+    strlcpy(s.bank_flow, t.bank_flow, sizeof(s.bank_flow));
 
     portENTER_CRITICAL(&snapshot_lock);
     shared_snapshot = s;
@@ -244,6 +285,23 @@ static void num_json(char* out, size_t len, float v, const char* fmt) {
     else snprintf(out, len, fmt, v);
 }
 
+// A JSON string: quotes and backslashes escaped, control characters (the unit's labels use
+// newlines) as spaces. Cylinder names are typed at the unit, so anything can turn up.
+static String json_str(const char* in) {
+    String out = "\"";
+    for (const char* p = in; *p; p++) {
+        if (*p == '"' || *p == '\\') {
+            out += '\\';
+            out += *p;
+        } else if ((unsigned char)*p < 0x20) {
+            out += ' ';
+        } else {
+            out += *p;
+        }
+    }
+    return out + "\"";
+}
+
 void WebDashboard::handleState() {
     const WebSnapshot s = snapshot();
     char bank[16], fill[16], o2[16], he[16], o2mv[16], hemv[16];
@@ -267,7 +325,19 @@ void WebDashboard::handleState() {
              he, hemv, s.he_target, s.he_valve, bank, fill,
              s.bar ? "BAR" : "PSI", s.he_on ? "true" : "false", s.pressure ? "true" : "false",
              s.compressor, s.status);
-    server.send(200, "application/json", json);
+    // The rest are strings from the screen, escaped, so they're added separately.
+    String body(json);
+    body.remove(body.length() - 1);   // the closing brace
+    body += ",\"detail\":" + json_str(s.detail);
+    body += ",\"fill_mode\":";
+    body += s.fill_mode ? "true" : "false";
+    body += ",\"fillv\":{\"bank_rate\":" + json_str(s.bank_rate);
+    body += ",\"bank_gap\":" + json_str(s.bank_gap) + ",\"bank_eq\":" + json_str(s.bank_eq);
+    body += ",\"fill_rate\":" + json_str(s.fill_rate) + ",\"fill_flow\":" + json_str(s.fill_flow);
+    body += ",\"fill_eta\":" + json_str(s.fill_eta) + ",\"cylinder\":" + json_str(s.cylinder);
+    body += ",\"bank_size\":" + json_str(s.bank_size) + ",\"bank_flow\":" + json_str(s.bank_flow);
+    body += "}}";
+    server.send(200, "application/json", body);
 }
 
 // Deliberately needs neither the PIN nor remote control armed: stopping is always safe,

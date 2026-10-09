@@ -465,7 +465,8 @@ regulator pressure, a different valve):
   third blend that re-learned.
 - **O2 ceiling.** If the O2 reading goes more than 2 points over its target for any reason,
   the O2 valve is held shut until the mix is back at target. The status panel shows
-  "O2 over target" meanwhile.
+  "O2 over target" meanwhile. If the reading hasn't dropped by half a point within 15 s
+  of the valve shutting, it's an emergency stop: see [Limits and Safety](#limits-and-safety).
 - **Forget** on Setup > Valve Test clears the learned openings. Use it after changing the
   compressor, regulator pressure or valves, and the next blend learns from scratch with no
   overshoot. The same page lists what has been learned ("O2 82% held 32%").
@@ -476,6 +477,69 @@ regulator pressure, a different valve):
 **Targets at air.** An O2 target of 21% or less with no helium, or a helium target of 0,
 keeps that valve shut: there is nothing to add, and with a start point set a loop chasing
 a tenth of a percent would otherwise crack the valve open.
+
+## Limits and Safety
+
+**Setup > Limits & Safety** sets the highest target for each gas: **O2 40%** and
+**helium 50%** by default. The O2 limit can be set from 22 to 100%, helium from 5 to 100%.
+Tap + or − for one step; hold for five. The wheels stop at the limits, and presets and the
+web page can't set more. A preset over a limit is pulled down to it, and a notice says
+so ("12/65 is over the limits ... so the targets are 12/50"). Lowering a limit below the
+current target lowers the target too. The limits are stored on the unit (NVS `limits`)
+and can only be changed there.
+
+Two emergency stops guard the oxygen while gas is flowing. They work whatever the
+limits are set to:
+
+| Condition | What happens |
+|---|---|
+| O2 more than 2 points over target | O2 valve held shut until back at target (the O2 ceiling) |
+| ...and not down half a point within 15 s | **EMERGENCY STOP**: the oxygen is getting in some other way, such as a stuck valve or a leak past it |
+| O2 more than 2 points over the O2 limit for 2 s | **EMERGENCY STOP** |
+
+Both are latched: the valves stay shut until the operator taps the red button to
+resume. The status panel and the serial log give the reason, for example "O2 reached
+44.5%, over the 40% limit. Check the O2 valve." Lowering a target mid-blend doesn't trip
+them: the O2 falls once its valve shuts. In the simulator, a target cut from 32% to 26%
+was held and released with no stop, and a valve leaking 12% oxygen tripped 15 s after
+the ceiling. Lowering the O2 limit below the current mix during a blend does trip the
+second check.
+
+Both checks only work while the firmware is running and the O2 cell reads correctly. For
+a stop that doesn't depend on either, see
+[Optional external emergency stop](#optional-external-emergency-stop).
+
+### Optional external emergency stop
+
+A hardware switch that cuts the valves' power, whatever the firmware is doing. **It's
+optional.** Without it, wire the valve boards as above; there's nothing to set in the
+firmware.
+
+Fit a **normally-closed, latching mushroom-head E-stop switch** (twist or key to
+release) in series with the +12 V feed to the two valve boards' `+` terminals, after the
+fuse:
+
+```
+12 V supply (+) --- fuse --+-- buck IN+ (the board and sensors stay powered)
+                           |
+                           '-- [E-STOP, NC] --+-- O2 valve board  +
+                                              '-- He valve board  +
+```
+
+- Pressing it cuts the coil current, so both proportional valves close on their springs,
+  in any state. The display, sensors and web page stay up, so the readings can still be
+  watched.
+- Put it **after the buck's tap**. Breaking the whole 12 V supply would also reset the
+  controller.
+- It carries only the valve current (under 0.5 A), so any panel E-stop with an NC contact
+  will do. A latching switch stays off until someone resets it deliberately.
+- The firmware doesn't see the switch. A blend that was running carries on trying, and
+  with no oxygen arriving its loop keeps opening further, so releasing the switch
+  mid-blend would give a burst of oxygen (the O2 checks above would then catch it). After
+  using the switch, tap EMERGENCY STOP on the screen too, and resume only once the
+  switch is reset.
+- The flyback diodes stay at the valves, across each coil, so opening the switch under
+  load is safe.
 
 ## Maintenance Counters
 
@@ -530,21 +594,44 @@ mid-fill. Time to full is what's left to the cylinder's working pressure at the 
 rate.
 
 The presets follow the pressure units on Blender Setup: PSI shows sizes in cu ft, BAR in
-litres of water. Each unit has its own selection and its own custom size and working
-pressure, so switching units never leaves an odd size selected.
+litres of water. Each unit has its own selection and its own custom sizes, so switching
+units never leaves an odd size selected.
 
-| | PSI | BAR |
+The cylinder page shows the presets in tabs, one group at a time. Ratings are from the
+makers' spec sheets (Catalina, Luxfer, Faber, Worthington); LP steels are rated at their
++10% fill pressure.
+
+| PSI tab | Cylinders |
+|---|---|
+| Aluminum | AL30, AL40, AL50, AL63, AL72 @ 3000 psi; AL80 (77.4 cu ft) @ 3000; AL100 @ 3300 |
+| Steel LP | Faber LP50, LP85, LP95, LP108, LP120 @ 2640 psi |
+| Steel HP | HP65, HP80, HP100, HP119, HP120, HP130 @ 3442 psi |
+
+| BAR tab | Cylinders |
+|---|---|
+| Single | 3 L @ 200 bar; 5, 7, 10, 12, 15, 18 L @ 232; 12 L @ 300 |
+| Twin | twin 7 (14 L), twin 12 (24 L) @ 232 |
+
+**My cylinders**: three custom slots per unit for anything not listed, such as a twinset
+or a stage. Tap a slot to use it; its name (up to 11 characters, set with the on-screen
+keyboard), size and rating appear below it. Slots are kept after restart.
+
+| Bank bottles (1-12) | PSI | BAR |
 |---|---|---|
-| Cylinders | 40 cu ft @ 3000 psi, 50 @ 2640, AL63 @ 3000, 72 @ 3000, AL80 (77) @ 3000, LP85 @ 2640, HP100 @ 3442, HP120 @ 3442, LP120 @ 2640 | 3 L @ 200 bar, 7 L, 10 L, 12 L, 15 L (all @ 232), 12 L @ 300, twin 12 (24 L) @ 232 |
-| Bank bottles (1-12) | 444 cu ft @ 4500 psi, 300 cu ft @ 4500 psi | 50 L @ 300 bar, 50 L @ 200 bar, 80 L @ 300 bar |
+| Presets | 444 cu ft @ 4500 psi, 300 cu ft @ 4500 psi | 50 L @ 300 bar, 50 L @ 200 bar, 80 L @ 300 bar |
 
-Defaults: an AL80 or 12 L cylinder, and a bank of 4 x 444 cu ft or 4 x 50 L.
+The bank page has one custom size, plus the number of bottles.
+
+Defaults: an AL80 or 12 L cylinder, and a bank of 4 x 444 cu ft or 4 x 50 L. The
+selection is saved by name, so adding presets doesn't change it.
 
 ## Safety Notes
 
 1. **Valve Fail-Safe**: On startup, all valves are closed
 2. **Pressure Monitoring**: Add appropriate pressure relief valves
-3. **Emergency Stop**: Consider adding a hardware emergency stop button
+3. **Emergency Stop**: the screen and web page stop the valves in firmware, with automatic
+   O2 stops (see [Limits and Safety](#limits-and-safety)). An optional hardware switch is
+   described in [Optional external emergency stop](#optional-external-emergency-stop)
 4. **Gas Handling**: Follow proper safety procedures for oxygen and helium
 5. **Electrical Safety**: Use proper fusing and isolation for valve power
 

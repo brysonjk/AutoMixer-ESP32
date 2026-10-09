@@ -213,17 +213,72 @@ static const float AIR_TARGET_O2 = 21.0f;
 // once it is back at target. While latched the O2 valve stays shut.
 static bool o2_over = false;
 
+// With the O2 valve shut the reading has to fall. If it hasn't come down by
+// CEILING_DROP within CEILING_TRIP_MS, oxygen is getting in some other way (a valve stuck
+// open, a leak past it): emergency stop, which needs the operator to resume.
+static const uint32_t CEILING_TRIP_MS = 15000;
+static const float CEILING_DROP = 0.5f;
+static uint32_t ceiling_since = 0;
+static float ceiling_o2 = 0.0f;
+
+// Hard limit: O2 this far over the O2 wheel's limit while gas is flowing is an emergency
+// stop, whatever the target. Held for LIMIT_TRIP_MS so a single noisy reading can't trip it.
+static const float LIMIT_MARGIN = 2.0f;
+static const uint32_t LIMIT_TRIP_MS = 2000;
+static uint32_t over_limit_since = 0;
+
+static void closeValvesAndReset();
+
+static void emergencyStop(const char* reason) {
+    closeValvesAndReset();
+    gui->triggerEmergencyStop(reason);
+}
+
 static bool o2OverCeiling(float o2, float o2_target) {
+    const uint32_t now = millis();
     if (!o2_over && o2 > o2_target + O2_CEILING) {
         o2_over = true;
         o2_loop.hold();
+        ceiling_since = now;
+        ceiling_o2 = o2;
         Serial.printf("O2 %.1f%% is over %.0f%% + %.0f: O2 valve held shut\n", o2, o2_target, O2_CEILING);
     } else if (o2_over && o2 <= o2_target) {
         o2_over = false;
         Serial.println("O2 back at target: O2 valve released");
     }
+    if (o2_over) {
+        // Still rising restarts nothing: the window runs from the highest reading seen,
+        // so a reading that climbs for 15 s trips just as surely as one that sits still.
+        if (o2 > ceiling_o2) ceiling_o2 = o2;
+        if (o2 <= ceiling_o2 - CEILING_DROP) {
+            ceiling_since = now;
+            ceiling_o2 = o2;
+        } else if (now - ceiling_since >= CEILING_TRIP_MS) {
+            char reason[112];
+            snprintf(reason, sizeof(reason),
+                     "O2 at %.1f%% didn't fall in 15 s with its valve shut. Check the O2 valve.", o2);
+            emergencyStop(reason);
+            return true;
+        }
+    }
     gui->setO2OverTarget(o2_over);
     return o2_over;
+}
+
+static bool o2OverLimit(float o2) {
+    const float limit = gui->oxygenLimit() + LIMIT_MARGIN;
+    if (isnan(o2) || o2 <= limit) {
+        over_limit_since = 0;
+        return false;
+    }
+    const uint32_t now = millis();
+    if (over_limit_since == 0) over_limit_since = now ? now : 1;
+    if (now - over_limit_since < LIMIT_TRIP_MS) return false;
+    char reason[112];
+    snprintf(reason, sizeof(reason), "O2 reached %.1f%%, over the %u%% limit. Check the O2 valve.", o2,
+             gui->oxygenLimit());
+    emergencyStop(reason);
+    return true;
 }
 
 // Every path that forces the valves shut also clears both integrals, so blending
@@ -233,6 +288,7 @@ static void closeValvesAndReset() {
     o2_loop.reset();
     he_loop.reset();
     o2_over = false;
+    over_limit_since = 0;
     gui->setO2OverTarget(false);
 }
 
@@ -292,6 +348,7 @@ static void updateBlendControl() {
 
     const float o2 = sensors.getOxygenPercent();
     const float o2_target = gui->getOxygenTarget();
+    if (o2OverLimit(o2)) return;
     const float he_target = gui->heliumEnabled() ? gui->getHeliumTarget() : 0.0f;
     // Helium dilutes the oxygen, so at a 21% O2 target the O2 valve still has work to do
     // once there is helium in the mix.
@@ -303,6 +360,7 @@ static void updateBlendControl() {
         valves.setHeValve(0);
         he_loop.reset();
         const bool over = o2OverCeiling(o2, o2_target);
+        if (gui->emergencyStopped()) return;
         valves.setO2Valve(o2_needed && !over ? o2_loop.output(o2_target, o2, AIR_O2_PERCENT,
                                                                100.0f - AIR_O2_PERCENT)
                                              : 0.0f);
@@ -321,6 +379,7 @@ static void updateBlendControl() {
     // Oxygen goes into gas the helium has already diluted: what the after-He cell reads.
     const float o2_base = sensors.getHeCellO2Percent();
     const bool over = o2OverCeiling(o2, o2_target);
+    if (gui->emergencyStopped()) return;
     valves.setO2Valve(o2_needed && !over ? o2_loop.output(o2_target, o2, o2_base, 100.0f - o2_base)
                                          : 0.0f);
     if (o2_needed) logBlend("O2", o2_loop, o2_target, o2, valves.getO2ValvePosition());

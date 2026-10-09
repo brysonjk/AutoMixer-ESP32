@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 790" role="img" aria-label="Wiring overview: a regulated, fused 12 volt supply feeds a 5 volt buck to the board's P1 header and the two valve driver boards. The buck's IN− goes to the star ground point and its OUT− feeds P1 GND, so the board's ground returns through the buck. The ADS1115 connects to GPIO 19 and 20 on P3 with power from P4 and reads two O2 cells and two pressure transducers. GPIO 17 on P5 and GPIO 11 on P2 drive optoisolated AOD4184 breakout boards, switching the O2 and helium valves on the low side; the boards' input ground comes from P5's GND pin and their + terminals from the 12 volt rail; each valve's two leads run to its board, where the flyback diode sits. A current switch closes GPIO 12 to ground while the compressor runs." width="1200" height="790">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1200 790" role="img" aria-label="Wiring overview: a regulated, fused 12 volt supply feeds a 5 volt buck to the board's P1 header and the two valve driver boards. The buck's IN− goes to the star ground point and its OUT− feeds P1 GND, so the board's ground returns through the buck. The ADS1115 connects to GPIO 19 and 20 on P3 with power from P4 and reads two O2 cells and two pressure transducers. GPIO 17 on P5 and GPIO 11 on P2 drive optoisolated AOD4184 breakout boards, switching the O2 and helium valves on the low side; the boards' input ground comes from P5's GND pin and their + terminals from the 12 volt rail, through an optional normally-closed emergency stop switch; each valve's two leads run to its board, where the flyback diode sits. A current switch closes GPIO 12 to ground while the compressor runs." width="1200" height="790">
 <style>svg{
   --paper:#EEF1F0; --sheet:#FFFFFF; --ink:#1A2328; --muted:#5B6870; --rule:#CBD3D6; --box:#F3F6F6; --board:#E6EEEA;
   --w10:#C62828; --w5:#C75F00; --w33:#8C6A00; --gnd:#3B4A52; --i2c:#1F63C6; --pwm:#13804A; --sig:#7A3DB8;
@@ -38,7 +38,16 @@
         <rect class="box" x="20" y="62" width="150" height="64" rx="3"/>
         <text class="tb" x="95" y="89" text-anchor="middle">DC supply</text>
         <text class="ts" x="95" y="107" text-anchor="middle">12 V regulated · 2 A</text>
-        <path class="w w10" d="M170 94H200M200 45V745H580M200 45H230"/>
+        <path class="w w10" d="M170 94H200M200 45V404M200 456V745H580M200 45H230"/>
+        <!-- Optional external E-STOP: NC, latching, in the valve rail only (after the buck's tap) -->
+        <rect class="dash" x="150" y="380" width="200" height="110" rx="6" fill="none" style="stroke:var(--muted);stroke-width:1.2"/>
+        <circle cx="200" cy="408" r="3.5" fill="none" style="stroke:var(--w10);stroke-width:2"/>
+        <circle cx="200" cy="452" r="3.5" fill="none" style="stroke:var(--w10);stroke-width:2"/>
+        <path d="M207 402V458M207 430H224M224 418A12 12 0 0 1 224 442Z" fill="none" style="stroke:var(--w10);stroke-width:2"/>
+        <text class="tb" x="244" y="418">E-STOP</text>
+        <text class="ts" x="244" y="435">optional · NC</text>
+        <text class="ts" x="244" y="450">latching</text>
+        <text class="ts" x="214" y="478">without it: a plain wire</text>
         <circle class="c10" cx="200" cy="94" r="3.5"/>
         <path class="w wg" d="M95 126V140"/>
         <use xlink:href="#gnd1" class="gs" x="95" y="140"/>

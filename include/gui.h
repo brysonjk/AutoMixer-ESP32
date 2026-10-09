@@ -42,6 +42,7 @@ struct KnobState {
     uint8_t channel;    // ADS1115 channel feeding this loop
     float value;        // 0-100
     lv_obj_t* picker;   // roller wheel selecting the target
+    uint8_t limit = 100; // highest target allowed (Setup > Limits & Safety)
 };
 
 class FillStationGUI {
@@ -62,7 +63,9 @@ public:
     // Filling mode: pressures, flow and time to full for a cylinder fill; blending is off
     // and main.cpp keeps both valves shut. Only offered while pressure sensors are fitted.
     bool fillMode() { return fill_mode && transducers_fitted; }
-    void triggerEmergencyStop();
+    // reason, if given, replaces the status panel's second line until resumed.
+    void triggerEmergencyStop(const char* reason = nullptr);
+    uint8_t oxygenLimit() const { return o2_knob.limit; }
 
     float getOxygenTarget() { return o2_knob.value; }
     float getHeliumTarget() { return he_knob.value; }
@@ -74,6 +77,14 @@ public:
     const char* remotePin() { return remote_pin; }
     const char* compressorText();
     const char* systemStatusText();
+    const char* statusDetailText();
+    // What the Filling screen (or, blending, the bank card) shows, for the web page. Main
+    // loop only: these read the screen's labels.
+    struct FillTexts {
+        const char *bank_rate, *bank_gap, *bank_eq, *fill_rate, *fill_flow, *fill_eta, *cylinder,
+            *bank_size, *bank_flow;
+    };
+    FillTexts fillTexts();
 
     // Blender Setup choices, persisted in NVS namespace "blender".
     bool pressureInBar() { return units_bar; }
@@ -98,16 +109,24 @@ private:
     lv_obj_t* screen_pcal;      // pressure calibration
     lv_obj_t* screen_valvetest = nullptr;
     lv_obj_t* screen_maint = nullptr;
+    lv_obj_t* screen_limits = nullptr;
+    lv_obj_t* lim_o2_val = nullptr;
+    lv_obj_t* lim_he_val = nullptr;
+    char estop_reason[112] = "";
 
     // Blending / Filling mode, and what is being filled. Persisted in NVS namespace "fill".
     bool fill_mode = false;
-    // Per pressure unit ([0] PSI, [1] BAR): index into that unit's preset list, one past
-    // the end = custom. Defaults AL80 / 12 L and 444 cu ft / 50 L.
-    uint8_t fill_sel[2] = {4, 3};
+    // Per pressure unit ([0] PSI, [1] BAR): index into that unit's preset list; past the
+    // end are the custom slots (FILL_SLOTS for cylinders, one for the bank). Defaults
+    // AL80 / 12 L and 444 cu ft / 50 L, set by name in loadFillSettings().
+    static const uint8_t FILL_SLOTS = 3;
+    uint8_t fill_sel[2] = {0, 0};
     uint8_t bank_sel[2] = {0, 0};
     uint8_t bank_count = 4;
-    // Custom sizes, per pressure unit like the presets.
-    CylinderSpec fill_custom[2] = {{"Custom", 80.0f, 3000.0f, false}, {"Custom", 12.0f, 232.0f, true}};
+    // Custom sizes, per pressure unit like the presets. Cylinder slots are named.
+    CylinderSpec fill_custom[2][FILL_SLOTS] = {
+        {{"Custom 1", 80.0f, 3000.0f, false}, {"Custom 2", 80.0f, 3000.0f, false}, {"Custom 3", 80.0f, 3000.0f, false}},
+        {{"Custom 1", 12.0f, 232.0f, true}, {"Custom 2", 12.0f, 232.0f, true}, {"Custom 3", 12.0f, 232.0f, true}}};
     CylinderSpec bank_custom[2] = {{"Custom", 444.0f, 4500.0f, false}, {"Custom", 50.0f, 300.0f, true}};
     lv_obj_t* btn_mode = nullptr;
     lv_obj_t* label_mode = nullptr;
@@ -129,8 +148,12 @@ private:
     lv_obj_t* cyl_title = nullptr;
     lv_obj_t* cyl_body = nullptr;
     bool cyl_for_bank = false;
+    uint8_t cyl_tab = 0;                   // cylinder page: preset group shown; last = custom
     lv_obj_t* cyl_tiles[16] = {};
+    uint8_t cyl_tile_first = 0;            // selection index of cyl_tiles[0]
     uint8_t cyl_tile_n = 0;
+    lv_obj_t* cyl_name_panel = nullptr;    // keyboard for naming a custom cylinder
+    lv_obj_t* cyl_name_ta = nullptr;
     lv_obj_t* cyl_size_val = nullptr;
     lv_obj_t* cyl_wp_val = nullptr;
     lv_obj_t* cyl_count_val = nullptr;
@@ -244,10 +267,16 @@ private:
     void createPressureCalScreen();
     void createValveTestScreen();
     void createMaintenanceScreen();
+    void createLimitsScreen();
+    void loadLimits();
+    void saveLimits();
+    void setPickerLimit(KnobState* state, uint8_t limit);
     void createFillPanel();
     void createCylinderScreen();
     void openCylinderPicker(bool bank);
     void refreshCylinderPicker();
+    void buildCylinderPage();
+    CylinderSpec* editedCylinder();
     void applyMode();
     void updateFillReadouts();
     void loadFillSettings();
@@ -316,12 +345,18 @@ private:
     static void menu_pcal_handler(lv_event_t* e);
     static void menu_valvetest_handler(lv_event_t* e);
     static void menu_maint_handler(lv_event_t* e);
+    static void menu_limits_handler(lv_event_t* e);
+    static void limits_step_handler(lv_event_t* e);
     static void mode_btn_handler(lv_event_t* e);
     static void mode_choice_handler(lv_event_t* e);
     static void bank_btn_handler(lv_event_t* e);
     static void cyl_btn_handler(lv_event_t* e);
     static void cyl_tile_handler(lv_event_t* e);
     static void cyl_step_handler(lv_event_t* e);
+    static void cyl_tab_handler(lv_event_t* e);
+    static void cyl_name_handler(lv_event_t* e);
+    static void cyl_kb_handler(lv_event_t* e);
+    static void cyl_rebuild_async(void* self);
     static void maint_step_handler(lv_event_t* e);
     static void maint_reset_handler(lv_event_t* e);
     static void maint_reset_confirm_handler(lv_event_t* e);

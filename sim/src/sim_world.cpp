@@ -33,6 +33,7 @@ namespace {
 #define SIM_MIX_TAU_S 5.0f
 #endif
 float o2_flow = SIM_O2_FLOW;   // adjustable at run time, for tests
+float o2_leak = 0.0f;          // oxygen that gets in with the valve shut: a stuck valve, for tests
 float he_share = 0.0f;       // helium fraction of the gas at the A0 cell
 float o2_added = 0.0f;       // fraction of the final gas that is added pure oxygen
 float bank_psi = 2840.0f;
@@ -60,7 +61,7 @@ void step() {
     // With no compressor drawing air through, fresh air slowly displaces the line.
     const bool flowing = sim_compressor_running;
     const float he_target = flowing ? std::fmin(0.95f, 2.5f * valveCommand(VALVE_HE_PIN)) : 0.0f;
-    const float o2_target = flowing ? std::fmin(1.0f, o2_flow * valveCommand(VALVE_O2_PIN)) : 0.0f;
+    const float o2_target = flowing ? std::fmin(1.0f, o2_flow * valveCommand(VALVE_O2_PIN) + o2_leak) : 0.0f;
     const float k = 1.0f - std::exp(-dt / SIM_MIX_TAU_S);   // time for the mix to follow a valve change
     he_share += (he_target - he_share) * k;
     o2_added += (o2_target - o2_added) * k;
@@ -117,3 +118,4 @@ extern "C" EMSCRIPTEN_KEEPALIVE float sim_gas(int which) {
 
 // Test hook: scale the O2 valve's flow, as if the rig changed under a learned controller.
 extern "C" EMSCRIPTEN_KEEPALIVE void sim_set_o2_flow(float flow) { o2_flow = flow; }
+extern "C" EMSCRIPTEN_KEEPALIVE void sim_set_o2_leak(float leak) { o2_leak = leak; }

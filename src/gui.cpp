@@ -131,8 +131,8 @@ FillStationGUI::FillStationGUI(OxygenSensor* sensor, ValveController* valves,
       preset_view_count(0), diagnostics(false),
       estop_active(false), compressor_running(false), estop_dialog_open(false),
       estop_btn(NULL), estop_label(NULL), status_tone(-1), btn_calibrate(NULL), btn_presets(NULL) {
-    o2_knob = {"O2", ADC_CH_OXYGEN, 21.0f, NULL};
-    he_knob = {"He", ADC_CH_HELIUM, 0.0f, NULL};
+    o2_knob = {"O2", ADC_CH_OXYGEN, 21.0f, NULL, 40};
+    he_knob = {"He", ADC_CH_HELIUM, 0.0f, NULL, 50};
     remote_pin[0] = '\0';
     textarea_pin = NULL;
     screen_pcal = NULL;
@@ -207,8 +207,9 @@ void FillStationGUI::remote_switch_handler(lv_event_t* e) {
 }
 
 void FillStationGUI::setTarget(KnobState* state, float value) {
+    // Never past the gas's limit, whether from the wheel, a preset or the web page.
     if (value < 0.0f) value = 0.0f;
-    if (value > 100.0f) value = 100.0f;
+    if (value > state->limit) value = state->limit;
     const uint16_t row = (uint16_t)lroundf(value / PICKER_STEP);
     state->value = row * PICKER_STEP;
     // Setting the selection from code raises no VALUE_CHANGED, so value is set above.
@@ -228,11 +229,24 @@ const char* FillStationGUI::systemStatusText() {
     return lv_label_get_text(label_system_status);
 }
 
+const char* FillStationGUI::statusDetailText() {
+    return lv_label_get_text(label_status_detail);
+}
+
+static const char* label_text(lv_obj_t* label) { return label ? lv_label_get_text(label) : ""; }
+
+FillStationGUI::FillTexts FillStationGUI::fillTexts() {
+    return {label_text(fp_bank_rate), label_text(fp_bank_flow), label_text(fp_src_eq),
+            label_text(fp_fill_rate), label_text(fp_fill_flow), label_text(fp_fill_eta),
+            label_text(fp_cyl_label), label_text(label_bank_size), label_text(label_bank_flow)};
+}
+
 void FillStationGUI::init() {
     loadRemotePin();
     loadPresets();
     loadBlenderSettings();
     loadFillSettings();
+    loadLimits();
 
     screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, COLOR_BG, 0);
@@ -253,6 +267,7 @@ void FillStationGUI::init() {
     createPressureCalScreen();
     createValveTestScreen();
     createMaintenanceScreen();
+    createLimitsScreen();
     createFillPanel();
     createCylinderScreen();
 
@@ -345,9 +360,10 @@ void FillStationGUI::createSetupMenu() {
         {"Valve Test", "Find where each valve starts to flow",
          menu_valvetest_handler},
         {"Maintenance", "Compressor hours, filter and oil reminders", menu_maint_handler},
+        {"Limits & Safety", "Highest O2 and helium targets", menu_limits_handler},
     };
     // A 2 x 3 grid of tiles, kept clear of the E-STOP along the bottom.
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
         lv_obj_t* btn = lv_btn_create(screen_menu);
         lv_obj_set_size(btn, 372, 100);
         lv_obj_set_pos(btn, 20 + (i % 2) * 388, 60 + (i / 2) * 116);
@@ -629,6 +645,10 @@ void FillStationGUI::createNetworkScreen() {
     // One keyboard, raised when a field is tapped: full width for the password, a number
     // pad to the right of the address fields for those, so the field stays visible.
     keyboard = lv_keyboard_create(screen_network);
+    // lv_keyboard_create aligns the keyboard bottom-centre, which turns lv_obj_set_pos into
+    // an offset from there and puts the keyboard off screen. Positions here are from the
+    // top-left.
+    lv_obj_set_align(keyboard, LV_ALIGN_TOP_LEFT);
     lv_keyboard_set_map(keyboard, LV_KEYBOARD_MODE_SPECIAL, kb_map_special, kb_ctrl_special);
     lv_obj_add_event_cb(keyboard, keyboard_handler, LV_EVENT_ALL, this);
     lv_obj_add_flag(keyboard, LV_OBJ_FLAG_HIDDEN);
@@ -684,9 +704,12 @@ void FillStationGUI::createPressureCalScreen() {
     lv_obj_set_width(help, 480);
 
     keyboard_pcal = lv_keyboard_create(screen_pcal);
+    lv_obj_set_align(keyboard_pcal, LV_ALIGN_TOP_LEFT);   // see createNetworkScreen()
     lv_keyboard_set_mode(keyboard_pcal, LV_KEYBOARD_MODE_NUMBER);
-    lv_obj_set_size(keyboard_pcal, 270, 200);
-    lv_obj_set_pos(keyboard_pcal, 520, 262);
+    // Centred below the reference fields and above the E-STOP; wide, so the keys stay
+    // finger-sized.
+    lv_obj_set_size(keyboard_pcal, 380, ESTOP_Y - 4 - 260);
+    lv_obj_set_pos(keyboard_pcal, (SCREEN_WIDTH - 380) / 2, 260);
     lv_obj_add_event_cb(keyboard_pcal, keyboard_handler, LV_EVENT_ALL, this);
     lv_obj_add_flag(keyboard_pcal, LV_OBJ_FLAG_HIDDEN);
 }
@@ -876,7 +899,7 @@ void FillStationGUI::textarea_handler(lv_event_t* e) {
         lv_obj_set_pos(self->keyboard, 0, 244);
     } else {
         lv_keyboard_set_mode(self->keyboard, LV_KEYBOARD_MODE_NUMBER);
-        lv_obj_set_size(self->keyboard, 270, 226);
+        lv_obj_set_size(self->keyboard, 270, ESTOP_Y - 4 - 240);
         lv_obj_set_pos(self->keyboard, 520, 240);
     }
     self->keyboard_target = ta;
@@ -1160,7 +1183,8 @@ void FillStationGUI::updateStatusPanel() {
     if (estop_active) {
         tone = TONE_RED;
         strlcpy(headline, "EMERGENCY STOP", sizeof(headline));
-        strlcpy(detail, "Valves closed. Tap the red button to resume.", sizeof(detail));
+        strlcpy(detail, estop_reason[0] ? estop_reason : "Valves closed. Tap the red button to resume.",
+                sizeof(detail));
     } else if (fillMode()) {
         tone = TONE_GREY;
         strlcpy(headline, "Filling mode", sizeof(headline));
@@ -1856,6 +1880,15 @@ void FillStationGUI::preset_select_handler(lv_event_t* e) {
         self->setHeliumTarget(p.he);
         Serial.printf("preset %u/%u selected\n", p.o2, p.he);
         self->closePresetDialog();
+        if (p.o2 > self->o2_knob.limit || (self->helium_enabled && p.he > self->he_knob.limit)) {
+            char text[128];
+            snprintf(text, sizeof(text),
+                     "%u/%u is over the limits (O2 %u%%, He %u%%), so the targets are %.0f/%.0f.\n"
+                     "Limits are on Setup > Limits & Safety.",
+                     p.o2, p.he, self->o2_knob.limit, self->he_knob.limit, self->o2_knob.value,
+                     self->he_knob.value);
+            show_notice("Preset limited", text);
+        }
         return;
     }
 
@@ -2022,7 +2055,9 @@ void FillStationGUI::maint_step_handler(lv_event_t* e) {
         self->maint->setLimitHours(c, self->maint->limitHours(c) + dir);
     } else if (code == LV_EVENT_LONG_PRESSED_REPEAT) {
         self->maint->setLimitHours(c, self->maint->limitHours(c) + dir * 10);
-    } else if (code == LV_EVENT_RELEASED) {
+    } else if (code == LV_EVENT_CLICKED) {
+        // CLICKED, not RELEASED: LVGL sends RELEASED before SHORT_CLICKED, so saving
+        // there would store the value from before the tap.
         self->maint->save();
     } else {
         return;
@@ -2128,19 +2163,43 @@ void FillStationGUI::updatePressureRates() {
 
 // One list per pressure unit (Blender Setup): PSI shops rate bottles in cu ft, BAR shops
 // in litres of water, and neither needs the other's sizes.
+// Ratings from the makers' spec sheets (Catalina, Luxfer, Faber, Worthington). LP steels
+// are rated at their +10% fill pressure, as they're sold.
 static const CylinderSpec FILL_PRESETS_PSI[] = {
-    {"40", 40.0f, 3000.0f, false},     {"50", 50.0f, 2640.0f, false},
-    {"AL63", 63.0f, 3000.0f, false},   {"72", 72.0f, 3000.0f, false},
-    {"AL80", 77.4f, 3000.0f, false},   {"LP85", 85.0f, 2640.0f, false},
-    {"HP100", 100.0f, 3442.0f, false}, {"HP120", 120.0f, 3442.0f, false},
+    // Aluminum
+    {"AL30", 30.0f, 3000.0f, false},   {"AL40", 40.0f, 3000.0f, false},
+    {"AL50", 50.0f, 3000.0f, false},   {"AL63", 63.0f, 3000.0f, false},
+    {"AL72", 72.0f, 3000.0f, false},   {"AL80", 77.4f, 3000.0f, false},
+    {"AL100", 100.0f, 3300.0f, false},
+    // Low-pressure steel: Faber's current line
+    {"LP50", 50.0f, 2640.0f, false},   {"LP85", 85.0f, 2640.0f, false},
+    {"LP95", 95.0f, 2640.0f, false},   {"LP108", 108.0f, 2640.0f, false},
     {"LP120", 120.0f, 2640.0f, false},
+    // High-pressure steel
+    {"HP65", 65.0f, 3442.0f, false},   {"HP80", 80.0f, 3442.0f, false},
+    {"HP100", 100.0f, 3442.0f, false}, {"HP119", 119.0f, 3442.0f, false},
+    {"HP120", 120.0f, 3442.0f, false}, {"HP130", 130.0f, 3442.0f, false},
 };
 static const CylinderSpec FILL_PRESETS_BAR[] = {
-    {"3 L", 3.0f, 200.0f, true},      {"7 L", 7.0f, 232.0f, true},
-    {"10 L", 10.0f, 232.0f, true},    {"12 L", 12.0f, 232.0f, true},
-    {"12 L 300", 12.0f, 300.0f, true}, {"15 L", 15.0f, 232.0f, true},
-    {"Twin 12", 24.0f, 232.0f, true},
+    {"3 L", 3.0f, 200.0f, true},       {"5 L", 5.0f, 232.0f, true},
+    {"7 L", 7.0f, 232.0f, true},       {"10 L", 10.0f, 232.0f, true},
+    {"12 L", 12.0f, 232.0f, true},     {"12 L 300", 12.0f, 300.0f, true},
+    {"15 L", 15.0f, 232.0f, true},     {"18 L", 18.0f, 232.0f, true},
+    {"Twin 7", 14.0f, 232.0f, true},   {"Twin 12", 24.0f, 232.0f, true},
 };
+
+// The cylinder page shows one group at a time, as tabs, plus a tab for the custom slots.
+struct CylGroup {
+    const char* name;
+    uint8_t first, count;
+};
+static const CylGroup FILL_GROUPS_PSI[] = {{"Aluminum", 0, 7}, {"Steel LP", 7, 5}, {"Steel HP", 12, 6}};
+static const CylGroup FILL_GROUPS_BAR[] = {{"Single", 0, 8}, {"Twin", 8, 2}};
+
+// Preset lists before the larger ones, for selections saved by index.
+static const char* const LEGACY_FILL_PSI[] = {"AL40", "LP50", "AL63", "AL72", "AL80",
+                                              "LP85", "HP100", "HP120", "LP120"};
+static const char* const LEGACY_FILL_BAR[] = {"3 L", "7 L", "10 L", "12 L", "12 L 300", "15 L", "Twin 12"};
 static const CylinderSpec BANK_PRESETS_PSI[] = {
     {"444", 444.0f, 4500.0f, false},
     {"300", 300.0f, 4500.0f, false},
@@ -2155,6 +2214,19 @@ static const CylinderSpec BANK_PRESETS_BAR[] = {
 static const CylinderSpec* fill_presets(bool bar, uint8_t* n) {
     *n = bar ? COUNT_OF(FILL_PRESETS_BAR) : COUNT_OF(FILL_PRESETS_PSI);
     return bar ? FILL_PRESETS_BAR : FILL_PRESETS_PSI;
+}
+static const CylGroup* fill_groups(bool bar, uint8_t* n) {
+    *n = bar ? COUNT_OF(FILL_GROUPS_BAR) : COUNT_OF(FILL_GROUPS_PSI);
+    return bar ? FILL_GROUPS_BAR : FILL_GROUPS_PSI;
+}
+// Index of a fill preset by name, or n (custom slot 1) if there's none by that name.
+static uint8_t fill_index(bool bar, const char* name) {
+    uint8_t n;
+    const CylinderSpec* p = fill_presets(bar, &n);
+    for (uint8_t i = 0; i < n; i++) {
+        if (strcmp(p[i].name, name) == 0) return i;
+    }
+    return n;
 }
 static const CylinderSpec* bank_presets(bool bar, uint8_t* n) {
     *n = bar ? COUNT_OF(BANK_PRESETS_BAR) : COUNT_OF(BANK_PRESETS_PSI);
@@ -2196,7 +2268,8 @@ static void flow_text(char* buf, size_t len, float psi_per_min, float litres_per
 const CylinderSpec& FillStationGUI::fillCylinder() const {
     uint8_t n;
     const CylinderSpec* p = fill_presets(units_bar, &n);
-    return fill_sel[units_bar] < n ? p[fill_sel[units_bar]] : fill_custom[units_bar];
+    const uint8_t sel = fill_sel[units_bar];
+    return sel < n ? p[sel] : fill_custom[units_bar][min<int>(sel - n, FILL_SLOTS - 1)];
 }
 const CylinderSpec& FillStationGUI::bankCylinder() const {
     uint8_t n;
@@ -2209,32 +2282,54 @@ void FillStationGUI::loadFillSettings() {
     prefs.begin("fill", true);
     // isKey() first: a get on a missing key logs an NVS error on every boot.
     if (prefs.isKey("mode")) fill_mode = prefs.getBool("mode", false);
-    // A selection per pressure unit, each into its own preset list (one past it = custom).
+    // The cylinder per pressure unit, saved by name ("#2" = custom slot 3) so the preset
+    // lists can grow. Older firmware saved an index into a shorter list.
+    static const char* const PICK_KEYS[2] = {"fpick0", "fpick1"};
+    static const char* const SEL_KEYS[2] = {"fsel0", "fsel1"};
+    for (int u = 0; u < 2; u++) {
+        uint8_t n;
+        fill_presets(u == 1, &n);
+        fill_sel[u] = fill_index(u == 1, u ? "12 L" : "AL80");
+        char name[12] = "";
+        if (prefs.isKey(PICK_KEYS[u])) {
+            prefs.getString(PICK_KEYS[u], name, sizeof(name));
+        } else {
+            const char* const* legacy = u ? LEGACY_FILL_BAR : LEGACY_FILL_PSI;
+            const int legacy_n = u ? COUNT_OF(LEGACY_FILL_BAR) : COUNT_OF(LEGACY_FILL_PSI);
+            int i = -1;
+            if (prefs.isKey(SEL_KEYS[u])) i = prefs.getUChar(SEL_KEYS[u], 0);
+            else if (u == 0 && prefs.isKey("fsel")) i = prefs.getUChar("fsel", 0);
+            if (i >= 0) strlcpy(name, i < legacy_n ? legacy[i] : "#0", sizeof(name));
+        }
+        if (name[0] == '#') fill_sel[u] = n + constrain(atoi(name + 1), 0, FILL_SLOTS - 1);
+        else if (name[0] && fill_index(u == 1, name) < n) fill_sel[u] = fill_index(u == 1, name);
+    }
     uint8_t n;
-    fill_presets(false, &n);
-    if (prefs.isKey("fsel0")) fill_sel[0] = min<int>(prefs.getUChar("fsel0", 4), n);
-    else if (prefs.isKey("fsel")) fill_sel[0] = min<int>(prefs.getUChar("fsel", 4), n);
-    fill_presets(true, &n);
-    if (prefs.isKey("fsel1")) fill_sel[1] = min<int>(prefs.getUChar("fsel1", 3), n);
     bank_presets(false, &n);
     if (prefs.isKey("bsel0")) bank_sel[0] = min<int>(prefs.getUChar("bsel0", 0), n);
     bank_presets(true, &n);
     if (prefs.isKey("bsel1")) bank_sel[1] = min<int>(prefs.getUChar("bsel1", 0), n);
     if (prefs.isKey("bcnt")) bank_count = constrain(prefs.getUChar("bcnt", 4), 1, 12);
-    // A custom size per pressure unit, kept only if it's in that unit's terms.
-    static const char* const FKEYS[2] = {"fcust0", "fcust1"};
+    // Custom sizes per pressure unit, kept only if they're in that unit's terms. Slot 1
+    // keeps the key of the single custom size before there were slots.
     static const char* const BKEYS[2] = {"bcust0", "bcust1"};
     for (int u = 0; u < 2; u++) {
         CylinderSpec c;
-        if (prefs.isKey(FKEYS[u]) && prefs.getBytes(FKEYS[u], &c, sizeof(c)) == sizeof(c) &&
-            c.metric == (u == 1)) {
-            fill_custom[u] = c;
+        for (int k = 0; k < FILL_SLOTS; k++) {
+            char key[12];
+            if (k == 0) snprintf(key, sizeof(key), "fcust%d", u);
+            else snprintf(key, sizeof(key), "fcust%d_%d", u, k);
+            if (prefs.isKey(key) && prefs.getBytes(key, &c, sizeof(c)) == sizeof(c) && c.metric == (u == 1)) {
+                c.name[sizeof(c.name) - 1] = 0;
+                if (c.name[0] && strcmp(c.name, "Custom") != 0) strlcpy(fill_custom[u][k].name, c.name, sizeof(c.name));
+                fill_custom[u][k].rated = c.rated;
+                fill_custom[u][k].wp = c.wp;
+            }
         }
         if (prefs.isKey(BKEYS[u]) && prefs.getBytes(BKEYS[u], &c, sizeof(c)) == sizeof(c) &&
             c.metric == (u == 1)) {
             bank_custom[u] = c;
         }
-        strlcpy(fill_custom[u].name, "Custom", sizeof(fill_custom[u].name));
         strlcpy(bank_custom[u].name, "Custom", sizeof(bank_custom[u].name));
     }
     prefs.end();
@@ -2244,19 +2339,32 @@ void FillStationGUI::saveFillSettings() {
     Preferences prefs;
     prefs.begin("fill", false);
     prefs.putBool("mode", fill_mode);
-    prefs.putUChar("fsel0", fill_sel[0]);
-    prefs.putUChar("fsel1", fill_sel[1]);
+    for (int u = 0; u < 2; u++) {
+        uint8_t n;
+        const CylinderSpec* p = fill_presets(u == 1, &n);
+        char key[12], name[12];
+        if (fill_sel[u] < n) strlcpy(name, p[fill_sel[u]].name, sizeof(name));
+        else snprintf(name, sizeof(name), "#%d", fill_sel[u] - n);
+        snprintf(key, sizeof(key), "fpick%d", u);
+        prefs.putString(key, name);
+        for (int k = 0; k < FILL_SLOTS; k++) {
+            if (k == 0) snprintf(key, sizeof(key), "fcust%d", u);
+            else snprintf(key, sizeof(key), "fcust%d_%d", u, k);
+            prefs.putBytes(key, &fill_custom[u][k], sizeof(CylinderSpec));
+        }
+    }
     prefs.putUChar("bsel0", bank_sel[0]);
     prefs.putUChar("bsel1", bank_sel[1]);
-    prefs.remove("fsel");   // single selections from before the per-unit lists
-    prefs.remove("bsel");
+    // Selections by index, from before the per-unit lists and before selections by name.
+    if (prefs.isKey("fsel")) prefs.remove("fsel");
+    if (prefs.isKey("fsel0")) prefs.remove("fsel0");
+    if (prefs.isKey("fsel1")) prefs.remove("fsel1");
+    if (prefs.isKey("bsel")) prefs.remove("bsel");
     prefs.putUChar("bcnt", bank_count);
-    prefs.putBytes("fcust0", &fill_custom[0], sizeof(CylinderSpec));
-    prefs.putBytes("fcust1", &fill_custom[1], sizeof(CylinderSpec));
     prefs.putBytes("bcust0", &bank_custom[0], sizeof(CylinderSpec));
     prefs.putBytes("bcust1", &bank_custom[1], sizeof(CylinderSpec));
-    prefs.remove("fcust");   // single custom sizes from before the per-unit lists
-    prefs.remove("bcust");
+    if (prefs.isKey("fcust")) prefs.remove("fcust");   // from before the per-unit lists
+    if (prefs.isKey("bcust")) prefs.remove("bcust");
     prefs.end();
 }
 
@@ -2443,6 +2551,29 @@ void FillStationGUI::createCylinderScreen() {
     lv_obj_set_size(cyl_body, SCREEN_WIDTH, 370);
     lv_obj_set_pos(cyl_body, 0, BANNER_H);
     lv_obj_clear_flag(cyl_body, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Naming a custom cylinder: a text field and keyboard over the page, stopping short
+    // of the E-STOP button so it stays in reach.
+    cyl_name_panel = lv_obj_create(screen_cyl);
+    lv_obj_remove_style_all(cyl_name_panel);
+    lv_obj_set_size(cyl_name_panel, SCREEN_WIDTH, ESTOP_Y - 4);
+    lv_obj_set_style_bg_color(cyl_name_panel, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(cyl_name_panel, LV_OPA_90, 0);
+    lv_obj_add_flag(cyl_name_panel, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(cyl_name_panel, LV_OBJ_FLAG_SCROLLABLE);
+    make_label(cyl_name_panel, "Name this cylinder", &lv_font_montserrat_20, COLOR_LABEL, 150, 24);
+    cyl_name_ta = lv_textarea_create(cyl_name_panel);
+    lv_textarea_set_one_line(cyl_name_ta, true);
+    lv_textarea_set_max_length(cyl_name_ta, sizeof(CylinderSpec::name) - 1);
+    lv_obj_set_style_text_font(cyl_name_ta, &lv_font_montserrat_24, 0);
+    lv_obj_set_size(cyl_name_ta, 500, 52);
+    lv_obj_set_pos(cyl_name_ta, 150, 60);
+    lv_obj_t* kb = lv_keyboard_create(cyl_name_panel);
+    lv_obj_set_size(kb, SCREEN_WIDTH, ESTOP_Y - 4 - 130);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_textarea(kb, cyl_name_ta);
+    lv_obj_add_event_cb(kb, cyl_kb_handler, LV_EVENT_ALL, this);
+    lv_obj_add_flag(cyl_name_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
 static lv_obj_t* make_tile(lv_obj_t* parent, const char* top, const char* bottom, lv_coord_t x,
@@ -2479,7 +2610,6 @@ static void make_stepper(lv_obj_t* parent, const char* name, lv_coord_t y, int i
 
 void FillStationGUI::openCylinderPicker(bool bank) {
     cyl_for_bank = bank;
-    lv_obj_clean(cyl_body);
     // The sub-screen's banner title is drawn twice, a pixel apart, to look bold: set every
     // label in the banner (the Back button's label sits inside its button, not here).
     lv_obj_t* banner = lv_obj_get_child(screen_cyl, 0);
@@ -2487,47 +2617,121 @@ void FillStationGUI::openCylinderPicker(bool bank) {
         lv_obj_t* child = lv_obj_get_child(banner, i);
         if (lv_obj_check_type(child, &lv_label_class)) lv_label_set_text(child, bank ? "Bank size" : "Cylinder");
     }
-
-    uint8_t n;
-    const CylinderSpec* presets = bank ? bank_presets(units_bar, &n) : fill_presets(units_bar, &n);
-    cyl_tile_n = n + 1;
-    char spec[32];
-    for (uint8_t i = 0; i <= n; i++) {
-        const lv_coord_t x = 24 + (i % 4) * 190, y = 14 + (i / 4) * 70;
-        if (i < n) {
-            spec_text(spec, sizeof(spec), presets[i]);
-            cyl_tiles[i] = make_tile(cyl_body, presets[i].name, spec, x, y);
-        } else {
-            cyl_tiles[i] = make_tile(cyl_body, "Custom", "set below", x, y);
+    // Open on the tab holding the current cylinder.
+    if (!bank) {
+        uint8_t n, gn;
+        fill_presets(units_bar, &n);
+        const CylGroup* g = fill_groups(units_bar, &gn);
+        const uint8_t sel = fill_sel[units_bar];
+        cyl_tab = gn;
+        for (uint8_t i = 0; i < gn; i++) {
+            if (sel >= g[i].first && sel < g[i].first + g[i].count) cyl_tab = i;
         }
-        lv_obj_set_user_data(cyl_tiles[i], (void*)(intptr_t)i);
-        lv_obj_add_event_cb(cyl_tiles[i], cyl_tile_handler, LV_EVENT_CLICKED, this);
     }
-    const lv_coord_t rows_end = 14 + ((n + 4) / 4) * 70;
-    make_stepper(cyl_body, "Custom size", rows_end + 6, 0, cyl_step_handler, this, &cyl_size_val);
-    make_stepper(cyl_body, "Rated at", rows_end + 60, 2, cyl_step_handler, this, &cyl_wp_val);
-    cyl_count_val = nullptr;
-    if (bank) make_stepper(cyl_body, "Bottles", rows_end + 114, 4, cyl_step_handler, this, &cyl_count_val);
-    refreshCylinderPicker();
+    set_hidden(cyl_name_panel, true);
+    buildCylinderPage();
     lv_scr_load(screen_cyl);
+}
+
+// The custom size the steppers edit: the bank's, or the selected cylinder slot (none when
+// a preset is selected).
+CylinderSpec* FillStationGUI::editedCylinder() {
+    if (cyl_for_bank) return &bank_custom[units_bar];
+    uint8_t n;
+    fill_presets(units_bar, &n);
+    const uint8_t sel = fill_sel[units_bar];
+    return sel >= n ? &fill_custom[units_bar][sel - n] : nullptr;
+}
+
+// Bank: its presets and a Custom tile, then the custom size and bottle count. Cylinder:
+// tabs for each preset group and one for the custom slots; the custom tab adds the name
+// and size of the selected slot.
+void FillStationGUI::buildCylinderPage() {
+    lv_obj_clean(cyl_body);
+    cyl_size_val = cyl_wp_val = cyl_count_val = nullptr;
+    char spec[32];
+    uint8_t n;
+    const CylinderSpec* presets = cyl_for_bank ? bank_presets(units_bar, &n) : fill_presets(units_bar, &n);
+
+    auto add_tile = [&](uint8_t slot, uint8_t sel_index, const CylinderSpec& c, lv_coord_t y0) {
+        const lv_coord_t x = 24 + (slot % 4) * 190, y = y0 + (slot / 4) * 70;
+        spec_text(spec, sizeof(spec), c);
+        cyl_tiles[slot] = make_tile(cyl_body, c.name, spec, x, y);
+        lv_obj_set_user_data(cyl_tiles[slot], (void*)(intptr_t)sel_index);
+        lv_obj_add_event_cb(cyl_tiles[slot], cyl_tile_handler, LV_EVENT_CLICKED, this);
+    };
+
+    if (cyl_for_bank) {
+        cyl_tile_first = 0;
+        cyl_tile_n = n + 1;
+        for (uint8_t i = 0; i < n; i++) add_tile(i, i, presets[i], 14);
+        add_tile(n, n, bank_custom[units_bar], 14);
+        lv_label_set_text(lv_obj_get_child(cyl_tiles[n], 1), "set below");
+        const lv_coord_t rows_end = 14 + ((n + 4) / 4) * 70;
+        make_stepper(cyl_body, "Custom size", rows_end + 6, 0, cyl_step_handler, this, &cyl_size_val);
+        make_stepper(cyl_body, "Rated at", rows_end + 60, 2, cyl_step_handler, this, &cyl_wp_val);
+        make_stepper(cyl_body, "Bottles", rows_end + 114, 4, cyl_step_handler, this, &cyl_count_val);
+        refreshCylinderPicker();
+        return;
+    }
+
+    uint8_t gn;
+    const CylGroup* groups = fill_groups(units_bar, &gn);
+    for (uint8_t i = 0; i <= gn; i++) {
+        lv_obj_t* tab = make_action_button(cyl_body, i < gn ? groups[i].name : "My cylinders",
+                                           24 + i * 190, 8, 176, 44,
+                                           i == cyl_tab ? COLOR_BTN_ACTIVE : COLOR_BTN);
+        lv_obj_set_user_data(tab, (void*)(intptr_t)i);
+        lv_obj_add_event_cb(tab, cyl_tab_handler, LV_EVENT_CLICKED, this);
+    }
+    const lv_coord_t top = 66;
+    if (cyl_tab < gn) {
+        const CylGroup& g = groups[cyl_tab];
+        cyl_tile_first = g.first;
+        cyl_tile_n = g.count;
+        for (uint8_t i = 0; i < g.count; i++) add_tile(i, g.first + i, presets[g.first + i], top);
+        refreshCylinderPicker();
+        return;
+    }
+    cyl_tile_first = n;
+    cyl_tile_n = FILL_SLOTS;
+    for (uint8_t k = 0; k < FILL_SLOTS; k++) add_tile(k, n + k, fill_custom[units_bar][k], top);
+    if (editedCylinder()) {
+        make_label(cyl_body, "Name", &lv_font_montserrat_20, COLOR_LABEL, 24, top + 86);
+        lv_obj_t* name = make_action_button(cyl_body, editedCylinder()->name, 220, top + 74, 308, 46, COLOR_BTN);
+        lv_obj_add_event_cb(name, cyl_name_handler, LV_EVENT_CLICKED, this);
+        make_stepper(cyl_body, "Size", top + 128, 0, cyl_step_handler, this, &cyl_size_val);
+        make_stepper(cyl_body, "Rated at", top + 182, 2, cyl_step_handler, this, &cyl_wp_val);
+    } else {
+        make_label(cyl_body, "Tap a slot to use it, then set its name and size.\nSlots are kept after restart.",
+                   &lv_font_montserrat_16, COLOR_PICKER_DIM, 24, top + 86);
+    }
+    refreshCylinderPicker();
 }
 
 void FillStationGUI::refreshCylinderPicker() {
     const uint8_t sel = cyl_for_bank ? bank_sel[units_bar] : fill_sel[units_bar];
     for (uint8_t i = 0; i < cyl_tile_n; i++) {
-        const bool on = i == sel;
+        const bool on = cyl_tile_first + i == sel;
         lv_obj_set_style_bg_color(cyl_tiles[i], on ? COLOR_BTN : COLOR_PICKER_BG, 0);
         lv_obj_set_style_border_width(cyl_tiles[i], on ? 2 : 1, 0);
         lv_obj_set_style_border_color(cyl_tiles[i], on ? COLOR_BTN_ACTIVE : COLOR_BTN, 0);
         // The spec line under the name: dim on a plain tile, light on the selected one.
         lv_obj_set_style_text_color(lv_obj_get_child(cyl_tiles[i], 1), on ? COLOR_BTN_TEXT : COLOR_PICKER_DIM, 0);
     }
-    const CylinderSpec& c = (cyl_for_bank ? bank_custom : fill_custom)[units_bar];
-    char buf[24];
-    snprintf(buf, sizeof(buf), c.metric ? "%.0f L" : "%.0f cu ft", c.rated);
-    lv_label_set_text(cyl_size_val, buf);
-    snprintf(buf, sizeof(buf), c.metric ? "%.0f bar" : "%.0f psi", c.wp);
-    lv_label_set_text(cyl_wp_val, buf);
+    char buf[32];
+    const CylinderSpec* c = editedCylinder();
+    if (c && cyl_size_val) {
+        snprintf(buf, sizeof(buf), c->metric ? "%.0f L" : "%.0f cu ft", c->rated);
+        lv_label_set_text(cyl_size_val, buf);
+        snprintf(buf, sizeof(buf), c->metric ? "%.0f bar" : "%.0f psi", c->wp);
+        lv_label_set_text(cyl_wp_val, buf);
+        // The slot's own tile shows its size as it changes.
+        if (!cyl_for_bank && sel >= cyl_tile_first && sel < cyl_tile_first + cyl_tile_n) {
+            spec_text(buf, sizeof(buf), *c);
+            lv_label_set_text(lv_obj_get_child(cyl_tiles[sel - cyl_tile_first], 1), buf);
+        }
+    }
     if (cyl_count_val) {
         snprintf(buf, sizeof(buf), "%u", bank_count);
         lv_label_set_text(cyl_count_val, buf);
@@ -2535,20 +2739,67 @@ void FillStationGUI::refreshCylinderPicker() {
     applyMode();
 }
 
+// Rebuilding the page deletes the button whose event is running, so it waits for LVGL's
+// next pass.
+void FillStationGUI::cyl_rebuild_async(void* self) { ((FillStationGUI*)self)->buildCylinderPage(); }
+
+void FillStationGUI::cyl_tab_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    self->cyl_tab = (uint8_t)(intptr_t)lv_obj_get_user_data(lv_event_get_target(e));
+    lv_async_call(cyl_rebuild_async, self);
+}
+
 void FillStationGUI::cyl_tile_handler(lv_event_t* e) {
     FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
     const uint8_t i = (uint8_t)(intptr_t)lv_obj_get_user_data(lv_event_get_target(e));
-    (self->cyl_for_bank ? self->bank_sel : self->fill_sel)[self->units_bar] = i;
+    uint8_t& sel = (self->cyl_for_bank ? self->bank_sel : self->fill_sel)[self->units_bar];
+    const bool was_slot = !self->cyl_for_bank && self->editedCylinder();
+    sel = i;
     self->saveFillSettings();
-    self->refreshCylinderPicker();
+    // Picking a custom slot brings up its name and size.
+    if (!self->cyl_for_bank && (self->editedCylinder() != nullptr) != was_slot) {
+        lv_async_call(cyl_rebuild_async, self);
+    } else {
+        self->refreshCylinderPicker();
+    }
+}
+
+void FillStationGUI::cyl_name_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    CylinderSpec* c = self->editedCylinder();
+    if (!c) return;
+    lv_textarea_set_text(self->cyl_name_ta, c->name);
+    set_hidden(self->cyl_name_panel, false);
+}
+
+void FillStationGUI::cyl_kb_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    const lv_event_code_t code = lv_event_get_code(e);
+    if (code != LV_EVENT_READY && code != LV_EVENT_CANCEL) return;
+    CylinderSpec* c = self->editedCylinder();
+    if (code == LV_EVENT_READY && c) {
+        // Leading and trailing spaces trimmed; an empty name keeps the old one.
+        const char* text = lv_textarea_get_text(self->cyl_name_ta);
+        while (*text == ' ') text++;
+        char name[sizeof(c->name)];
+        strlcpy(name, text, sizeof(name));
+        for (int i = strlen(name) - 1; i >= 0 && name[i] == ' '; i--) name[i] = 0;
+        if (name[0]) {
+            strlcpy(c->name, name, sizeof(c->name));
+            self->saveFillSettings();
+        }
+    }
+    set_hidden(self->cyl_name_panel, true);
+    lv_async_call(cyl_rebuild_async, self);
 }
 
 // Custom size (ids 0/1), working pressure (2/3) and bank bottle count (4/5). Tap for one
-// step, hold to step ten at a time. Editing the custom size selects it.
+// step, hold to step ten at a time. Editing the bank's custom size selects it; a cylinder
+// slot is edited once selected.
 void FillStationGUI::cyl_step_handler(lv_event_t* e) {
     FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
     const lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_RELEASED) {
+    if (code == LV_EVENT_CLICKED) {   // after SHORT_CLICKED's step (RELEASED comes before it)
         self->saveFillSettings();
         return;
     }
@@ -2559,8 +2810,8 @@ void FillStationGUI::cyl_step_handler(lv_event_t* e) {
 
     if (id >= 4) {
         self->bank_count = (uint8_t)constrain((int)self->bank_count + dir * mult, 1, 12);
-    } else {
-        CylinderSpec& c = (self->cyl_for_bank ? self->bank_custom : self->fill_custom)[self->units_bar];
+    } else if (self->editedCylinder()) {
+        CylinderSpec& c = *self->editedCylinder();
         if (id < 2) {
             c.rated = constrain(c.rated + dir * mult, 1.0f, c.metric ? 200.0f : 1000.0f);
         } else {
@@ -2568,12 +2819,84 @@ void FillStationGUI::cyl_step_handler(lv_event_t* e) {
             c.wp = constrain(c.wp + dir * mult * step, c.metric ? 100.0f : 1500.0f,
                              c.metric ? 450.0f : 6500.0f);
         }
-        uint8_t n;
-        if (self->cyl_for_bank) bank_presets(self->units_bar, &n);
-        else fill_presets(self->units_bar, &n);
-        (self->cyl_for_bank ? self->bank_sel : self->fill_sel)[self->units_bar] = n;   // custom
+        if (self->cyl_for_bank) {   // editing the bank's custom size selects it
+            uint8_t n;
+            bank_presets(self->units_bar, &n);
+            self->bank_sel[self->units_bar] = n;
+        }
     }
     self->refreshCylinderPicker();
+}
+
+// ---------------------------------------------------------------------------------
+// Limits & Safety: the highest O2 and helium targets the wheels, presets and web page can
+// set. Changed at the unit only. Persisted in NVS namespace "limits".
+
+static const uint8_t O2_LIMIT_MIN = 22, O2_LIMIT_MAX = 100;
+static const uint8_t HE_LIMIT_MIN = 5, HE_LIMIT_MAX = 100;
+
+void FillStationGUI::loadLimits() {
+    Preferences prefs;
+    prefs.begin("limits", true);
+    // isKey() first: a get on a missing key logs an NVS error on every boot.
+    if (prefs.isKey("o2max")) o2_knob.limit = constrain(prefs.getUChar("o2max", 40), O2_LIMIT_MIN, O2_LIMIT_MAX);
+    if (prefs.isKey("hemax")) he_knob.limit = constrain(prefs.getUChar("hemax", 50), HE_LIMIT_MIN, HE_LIMIT_MAX);
+    prefs.end();
+}
+
+void FillStationGUI::saveLimits() {
+    Preferences prefs;
+    prefs.begin("limits", false);
+    prefs.putUChar("o2max", o2_knob.limit);
+    prefs.putUChar("hemax", he_knob.limit);
+    prefs.end();
+    Serial.printf("limits: O2 %u%%, He %u%%\n", o2_knob.limit, he_knob.limit);
+}
+
+void FillStationGUI::createLimitsScreen() {
+    screen_limits = makeSubScreen("Limits & Safety", setup_close_handler);
+    make_stepper(screen_limits, "Highest O2", 70, 0, limits_step_handler, this, &lim_o2_val);
+    make_stepper(screen_limits, "Highest He", 130, 2, limits_step_handler, this, &lim_he_val);
+    make_label(screen_limits,
+               "The O2 and helium wheels stop at these, and presets or the web page can't\n"
+               "set more. Defaults: O2 40%, helium 50%.\n\n"
+               "Always on, whatever the limits:\n"
+               "  O2 more than 2 points over target: the O2 valve is held shut until it's back.\n"
+               "  ...and not falling within 15 s: EMERGENCY STOP (a stuck valve or a leak).\n"
+               "  O2 more than 2 points over the O2 limit while gas flows: EMERGENCY STOP.",
+               &lv_font_montserrat_16, COLOR_PICKER_DIM, 24, 200);
+}
+
+void FillStationGUI::menu_limits_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%u%%", self->o2_knob.limit);
+    lv_label_set_text(self->lim_o2_val, buf);
+    snprintf(buf, sizeof(buf), "%u%%", self->he_knob.limit);
+    lv_label_set_text(self->lim_he_val, buf);
+    lv_scr_load(self->screen_limits);
+}
+
+// O2 (ids 0/1) and helium (2/3) limits. Tap for 1, hold for 5 at a time; the wheel's rows
+// follow at once, and a target above the new limit is pulled down to it.
+void FillStationGUI::limits_step_handler(lv_event_t* e) {
+    FillStationGUI* self = (FillStationGUI*)lv_event_get_user_data(e);
+    const lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_CLICKED) {   // after SHORT_CLICKED's step (RELEASED comes before it)
+        self->saveLimits();
+        return;
+    }
+    if (code != LV_EVENT_SHORT_CLICKED && code != LV_EVENT_LONG_PRESSED_REPEAT) return;
+    const int id = (int)(intptr_t)lv_obj_get_user_data(lv_event_get_target(e));
+    const int step = ((id % 2) ? 1 : -1) * (code == LV_EVENT_LONG_PRESSED_REPEAT ? 5 : 1);
+    const bool o2 = id < 2;
+    KnobState* k = o2 ? &self->o2_knob : &self->he_knob;
+    const int v = constrain((int)k->limit + step, o2 ? O2_LIMIT_MIN : HE_LIMIT_MIN,
+                            o2 ? O2_LIMIT_MAX : HE_LIMIT_MAX);
+    self->setPickerLimit(k, (uint8_t)v);
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%u%%", k->limit);
+    lv_label_set_text(o2 ? self->lim_o2_val : self->lim_he_val, buf);
 }
 
 // ---------------------------------------------------------------------------------
@@ -2607,10 +2930,12 @@ void FillStationGUI::updateEstopButton() {
     lv_label_set_text(estop_label, estop_active ? "STOPPED  -  tap to resume" : "EMERGENCY STOP");
 }
 
-void FillStationGUI::triggerEmergencyStop() {
+void FillStationGUI::triggerEmergencyStop(const char* reason) {
     // Close first, then everything else: don't wait for the control loop's next pass.
     valve_ctrl->closeAllValves();
     estop_active = true;
+    strlcpy(estop_reason, reason ? reason : "", sizeof(estop_reason));
+    if (reason) Serial.printf("EMERGENCY STOP: %s\n", reason);
     // O2 20 rather than 21: the wheel is whole numbers, and at 21 the loop could still add
     // a trace of O2 to 20.9% air. Air then flows through unaltered once resumed.
     setOxygenTarget(20);
@@ -2645,23 +2970,21 @@ void FillStationGUI::estop_resume_handler(lv_event_t* e) {
     self->estop_dialog_open = false;
     if (!resume || !self->estop_active) return;
     self->estop_active = false;
+    self->estop_reason[0] = 0;
     self->updateEstopButton();
     Serial.printf("emergency stop released at %.0f/%.0f\n", self->o2_knob.value,
                   self->he_knob.value);
 }
 
 // iOS-style picker wheel: drag up/down, it flings and snaps to a row. One row per
-// PICKER_STEP from 0 to 100, so the selected row index maps straight to a percentage.
+// PICKER_STEP from 0 to the gas's limit, so the selected row index maps straight to a
+// percentage.
 void FillStationGUI::makePicker(lv_obj_t* col, KnobState* state, lv_color_t color) {
-    String options;
-    for (int i = 0; i <= PICKER_ROWS - 1; i++) {
-        if (i > 0) options += "\n";
-        options += String((int)lroundf(i * PICKER_STEP));
-    }
-
     lv_obj_t* roller = lv_roller_create(col);
-    // Normal mode stops at 0 and 100; infinite mode would wrap 100 straight back to 0.
-    lv_roller_set_options(roller, options.c_str(), LV_ROLLER_MODE_NORMAL);
+    state->picker = roller;
+    // Rows 0 to the gas's limit; normal mode stops at both ends, where infinite mode would
+    // wrap the top straight back to 0.
+    setPickerLimit(state, state->limit);
     lv_roller_set_visible_row_count(roller, 3);
     lv_obj_set_width(roller, PICKER_W);
 
@@ -2693,8 +3016,19 @@ void FillStationGUI::makePicker(lv_obj_t* col, KnobState* state, lv_color_t colo
         Serial.printf("layout: picker bottom %d overlaps E-STOP at %d\n", bottom, ESTOP_Y);
     }
 
-    state->picker = roller;
     lv_obj_add_event_cb(roller, picker_event_handler, LV_EVENT_VALUE_CHANGED, state);
+}
+
+// Rebuilds a wheel's rows to run 0..limit, and pulls its target down if it was above.
+void FillStationGUI::setPickerLimit(KnobState* state, uint8_t limit) {
+    state->limit = limit;
+    String options;
+    for (int i = 0; i <= limit; i++) {
+        if (i > 0) options += "\n";
+        options += String(i);
+    }
+    lv_roller_set_options(state->picker, options.c_str(), LV_ROLLER_MODE_NORMAL);
+    setTarget(state, state->value);
 }
 
 void FillStationGUI::createPickers() {

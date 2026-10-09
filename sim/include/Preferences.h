@@ -28,6 +28,13 @@ public:
         auto it = space().find(k);
         return it == space().end() ? d : String((const char*)it->second.data());
     }
+    size_t getString(const char* k, char* buf, size_t n) {
+        auto it = space().find(k);
+        if (it == space().end() || n == 0) return 0;
+        std::strncpy(buf, (const char*)it->second.data(), n - 1);
+        buf[n - 1] = 0;
+        return std::strlen(buf) + 1;
+    }
     size_t putBytes(const char* k, const void* v, size_t n) { return put(k, v, n); }
     size_t getBytes(const char* k, void* buf, size_t n) {
         auto it = space().find(k);

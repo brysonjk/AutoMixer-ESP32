@@ -104,7 +104,7 @@ td:nth-child(2),td:nth-child(3){font-family:"IBM Plex Mono",monospace;white-spac
     </div>
     <figure class="wide">
       <div class="scroll">
-      <svg viewBox="0 0 1200 790" role="img" aria-label="Wiring overview: a regulated, fused 12 volt supply feeds a 5 volt buck to the board's P1 header and the two valve driver boards. The buck's IN− goes to the star ground point and its OUT− feeds P1 GND, so the board's ground returns through the buck. The ADS1115 connects to GPIO 19 and 20 on P3 with power from P4 and reads two O2 cells and two pressure transducers. GPIO 17 on P5 and GPIO 11 on P2 drive optoisolated AOD4184 breakout boards, switching the O2 and helium valves on the low side; the boards' input ground comes from P5's GND pin and their + terminals from the 12 volt rail; each valve's two leads run to its board, where the flyback diode sits. A current switch closes GPIO 12 to ground while the compressor runs.">
+      <svg viewBox="0 0 1200 790" role="img" aria-label="Wiring overview: a regulated, fused 12 volt supply feeds a 5 volt buck to the board's P1 header and the two valve driver boards. The buck's IN− goes to the star ground point and its OUT− feeds P1 GND, so the board's ground returns through the buck. The ADS1115 connects to GPIO 19 and 20 on P3 with power from P4 and reads two O2 cells and two pressure transducers. GPIO 17 on P5 and GPIO 11 on P2 drive optoisolated AOD4184 breakout boards, switching the O2 and helium valves on the low side; the boards' input ground comes from P5's GND pin and their + terminals from the 12 volt rail, through an optional normally-closed emergency stop switch; each valve's two leads run to its board, where the flyback diode sits. A current switch closes GPIO 12 to ground while the compressor runs.">
         <defs>
           <g id="gnd1" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M0 0v8M-9 8h18M-5.5 12.5h11M-2 17h4"/></g>
         </defs>
@@ -113,7 +113,16 @@ td:nth-child(2),td:nth-child(3){font-family:"IBM Plex Mono",monospace;white-spac
         <rect class="box" x="20" y="62" width="150" height="64" rx="3"/>
         <text class="tb" x="95" y="89" text-anchor="middle">DC supply</text>
         <text class="ts" x="95" y="107" text-anchor="middle">12 V regulated · 2 A</text>
-        <path class="w w10" d="M170 94H200M200 45V745H580M200 45H230"/>
+        <path class="w w10" d="M170 94H200M200 45V404M200 456V745H580M200 45H230"/>
+        <!-- Optional external E-STOP: NC, latching, in the valve rail only (after the buck's tap) -->
+        <rect class="dash" x="150" y="380" width="200" height="110" rx="6" fill="none" style="stroke:var(--muted);stroke-width:1.2"/>
+        <circle cx="200" cy="408" r="3.5" fill="none" style="stroke:var(--w10);stroke-width:2"/>
+        <circle cx="200" cy="452" r="3.5" fill="none" style="stroke:var(--w10);stroke-width:2"/>
+        <path d="M207 402V458M207 430H224M224 418A12 12 0 0 1 224 442Z" fill="none" style="stroke:var(--w10);stroke-width:2"/>
+        <text class="tb" x="244" y="418">E-STOP</text>
+        <text class="ts" x="244" y="435">optional · NC</text>
+        <text class="ts" x="244" y="450">latching</text>
+        <text class="ts" x="214" y="478">without it: a plain wire</text>
         <circle class="c10" cx="200" cy="94" r="3.5"/>
         <path class="w wg" d="M95 126V140"/>
         <use href="#gnd1" class="gs" x="95" y="140"/>
@@ -258,7 +267,7 @@ td:nth-child(2),td:nth-child(3){font-family:"IBM Plex Mono",monospace;white-spac
         <text class="ts" x="1092" y="775" text-anchor="middle">of the compressor supply</text>
       </svg>
       </div>
-      <figcaption><b>Fig. 1.</b> Every connection to the board. Power comes in through P1, not USB-C (USB can stay plugged in for flashing). The buck's IN− and OUT− are the same copper, so P1 GND reaches the star through the buck; don't also wire P1 GND to the star. The ADS1115 has no power on P3, so it takes 3.3 V and GND from P4; P4 carries nothing else. P5 (wired in parallel with P4) carries the valve side: IO17 for the O2 valve's PWM and GND as the input ground of both valve boards (Fig. 2). On both plugs, leave the IO18 wire unconnected: it's the touch controller's interrupt. Every sensor ground (both O2 cells' − leads, both transducers' GND and the compressor switch's return) lands on the ADS1115's GND terminal, the point it measures against; that terminal returns to the star via P4, the board, P1 and the buck. Every ground symbol ends at the one star point in Fig. 3.</figcaption>
+      <figcaption><b>Fig. 1.</b> Every connection to the board. Power comes in through P1, not USB-C (USB can stay plugged in for flashing). The buck's IN− and OUT− are the same copper, so P1 GND reaches the star through the buck; don't also wire P1 GND to the star. The ADS1115 has no power on P3, so it takes 3.3 V and GND from P4; P4 carries nothing else. P5 (wired in parallel with P4) carries the valve side: IO17 for the O2 valve's PWM and GND as the input ground of both valve boards (Fig. 2). On both plugs, leave the IO18 wire unconnected: it's the touch controller's interrupt. Every sensor ground (both O2 cells' − leads, both transducers' GND and the compressor switch's return) lands on the ADS1115's GND terminal, the point it measures against; that terminal returns to the star via P4, the board, P1 and the buck. Every ground symbol ends at the one star point in Fig. 3. The dashed E-STOP is optional: a normally-closed latching switch in the valve rail, after the buck's tap, so pressing it closes both valves and leaves the display running. Without it the rail is a plain wire and nothing changes in the firmware.</figcaption>
     </figure>
   </section>
 

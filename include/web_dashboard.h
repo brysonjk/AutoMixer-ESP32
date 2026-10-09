@@ -20,6 +20,13 @@ struct WebSnapshot {
     char pin[7];
     char compressor[16];
     char status[24];
+    char detail[112];        // the status panel's second line, e.g. an E-STOP's reason
+    // Filling mode, and the readouts the unit shows for it (empty when it shows none).
+    bool fill_mode;
+    char bank_rate[24], bank_gap[32], bank_eq[40];
+    char fill_rate[24], fill_flow[32], fill_eta[32], cylinder[64];
+    // Blending mode's bank card.
+    char bank_size[24], bank_flow[32];
 };
 
 // Serves a live dashboard on port 80. View-only by default; changing a target needs
